@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { productInclude, serializeProduct } from "@/lib/serialize";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -7,11 +8,12 @@ export async function GET(_request: NextRequest, { params }: Params) {
   const { id } = await params;
   const product = await prisma.product.findUnique({
     where: { productId: Number(id) },
+    include: productInclude,
   });
   if (!product) {
     return NextResponse.json({ error: "상품을 찾을 수 없습니다." }, { status: 404 });
   }
-  return NextResponse.json(product);
+  return NextResponse.json(serializeProduct(product));
 }
 
 export async function PUT(request: NextRequest, { params }: Params) {
@@ -21,15 +23,16 @@ export async function PUT(request: NextRequest, { params }: Params) {
     where: { productId: Number(id) },
     data: {
       productName: body.productName,
-      category: body.category,
-      brand: body.brand,
+      categoryCode: body.category,
+      brandCode: body.brand,
       unitCostKrw: Number(body.unitCostKrw),
       unitPriceKrw: Number(body.unitPriceKrw),
       stockQty: Number(body.stockQty),
-      status: body.status,
+      statusCode: body.status,
     },
+    include: productInclude,
   });
-  return NextResponse.json(product);
+  return NextResponse.json(serializeProduct(product));
 }
 
 export async function DELETE(_request: NextRequest, { params }: Params) {

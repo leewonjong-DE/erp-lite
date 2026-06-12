@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { calcItemAmount } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { orderInclude, orderListInclude, serializeOrder, serializeOrderListItem } from "@/lib/serialize";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -11,26 +12,28 @@ export async function GET(request: NextRequest) {
   const customerId = searchParams.get("customerId") ?? "";
 
   const where = {
-    ...(status ? { status } : {}),
-    ...(channel ? { channel } : {}),
+    ...(status ? { statusCode: status } : {}),
+    ...(channel ? { channelCode: channel } : {}),
     ...(customerId ? { customerId: Number(customerId) } : {}),
   };
 
-  const [data, total] = await Promise.all([
+  const [rows, total] = await Promise.all([
     prisma.salesOrder.findMany({
       where,
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { orderDate: "desc" },
-      include: {
-        customer: { select: { customerName: true, tier: true } },
-        _count: { select: { items: true } },
-      },
+      include: orderListInclude,
     }),
     prisma.salesOrder.count({ where }),
   ]);
 
-  return NextResponse.json({ data, total, page, limit });
+  return NextResponse.json({
+    data: rows.map(serializeOrderListItem),
+    total,
+    page,
+    limit,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -53,7 +56,7 @@ export async function POST(request: NextRequest) {
   let itemId = (maxItemId._max.orderItemId ?? 1100000) + 1;
   const lineItems = items.map((item) => {
     const amountKrw = calcItemAmount(item.qty, item.unitPriceKrw, item.discountPct);
-    const row = {
+    return {
       orderItemId: itemId++,
       productId: item.productId,
       qty: item.qty,
@@ -61,7 +64,6 @@ export async function POST(request: NextRequest) {
       discountPct: item.discountPct,
       amountKrw,
     };
-    return row;
   });
 
   const totalAmountKrw = lineItems.reduce((sum, item) => sum + item.amountKrw, 0);
@@ -71,14 +73,14 @@ export async function POST(request: NextRequest) {
       orderNo,
       customerId: Number(body.customerId),
       orderDate: new Date(body.orderDate ?? new Date()),
-      status: body.status ?? "주문접수",
-      channel: body.channel,
-      paymentMethod: body.paymentMethod,
+      statusCode: body.status ?? "주문접수",
+      channelCode: body.channel,
+      paymentMethodCode: body.paymentMethod,
       totalAmountKrw,
       items: { create: lineItems },
     },
-    include: { items: true, customer: true },
+    include: orderInclude,
   });
 
-  return NextResponse.json(order, { status: 201 });
+  return NextResponse.json(serializeOrder(order), { status: 201 });
 }

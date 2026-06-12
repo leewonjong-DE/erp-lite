@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { productInclude, serializeProduct } from "@/lib/serialize";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -16,42 +17,49 @@ export async function GET(request: NextRequest) {
       ? {
           OR: [
             { productName: { contains: search, mode: "insensitive" as const } },
-            { brand: { contains: search, mode: "insensitive" as const } },
+            { brand: { name: { contains: search, mode: "insensitive" as const } } },
           ],
         }
       : {}),
-    ...(category ? { category } : {}),
-    ...(brand ? { brand } : {}),
-    ...(status ? { status } : {}),
+    ...(category ? { categoryCode: category } : {}),
+    ...(brand ? { brandCode: brand } : {}),
+    ...(status ? { statusCode: status } : {}),
     ...(lowStock ? { stockQty: { lt: 50 } } : {}),
   };
 
-  const [data, total] = await Promise.all([
+  const [rows, total] = await Promise.all([
     prisma.product.findMany({
       where,
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { productId: "asc" },
+      include: productInclude,
     }),
     prisma.product.count({ where }),
   ]);
 
-  return NextResponse.json({ data, total, page, limit });
+  return NextResponse.json({
+    data: rows.map(serializeProduct),
+    total,
+    page,
+    limit,
+  });
 }
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const product = await prisma.product.create({
+  const row = await prisma.product.create({
     data: {
       productId: Number(body.productId),
       productName: body.productName,
-      category: body.category,
-      brand: body.brand,
+      categoryCode: body.category,
+      brandCode: body.brand,
       unitCostKrw: Number(body.unitCostKrw),
       unitPriceKrw: Number(body.unitPriceKrw),
       stockQty: Number(body.stockQty),
-      status: body.status,
+      statusCode: body.status,
     },
+    include: productInclude,
   });
-  return NextResponse.json(product, { status: 201 });
+  return NextResponse.json(serializeProduct(row), { status: 201 });
 }

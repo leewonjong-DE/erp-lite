@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { orderInclude, serializeOrder } from "@/lib/serialize";
 
 type Params = { params: Promise<{ orderNo: string }> };
 
@@ -7,15 +8,12 @@ export async function GET(_request: NextRequest, { params }: Params) {
   const { orderNo } = await params;
   const order = await prisma.salesOrder.findUnique({
     where: { orderNo: Number(orderNo) },
-    include: {
-      customer: true,
-      items: { include: { product: true } },
-    },
+    include: orderInclude,
   });
   if (!order) {
     return NextResponse.json({ error: "주문을 찾을 수 없습니다." }, { status: 404 });
   }
-  return NextResponse.json(order);
+  return NextResponse.json(serializeOrder(order));
 }
 
 export async function PATCH(request: NextRequest, { params }: Params) {
@@ -24,13 +22,13 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const order = await prisma.salesOrder.update({
     where: { orderNo: Number(orderNo) },
     data: {
-      ...(body.status ? { status: body.status } : {}),
-      ...(body.channel ? { channel: body.channel } : {}),
-      ...(body.paymentMethod ? { paymentMethod: body.paymentMethod } : {}),
+      ...(body.status ? { statusCode: body.status } : {}),
+      ...(body.channel ? { channelCode: body.channel } : {}),
+      ...(body.paymentMethod ? { paymentMethodCode: body.paymentMethod } : {}),
     },
-    include: { customer: true, items: { include: { product: true } } },
+    include: orderInclude,
   });
-  return NextResponse.json(order);
+  return NextResponse.json(serializeOrder(order));
 }
 
 export async function DELETE(_request: NextRequest, { params }: Params) {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { productInclude, serializeProduct } from "@/lib/serialize";
 
 export async function GET() {
   const [
@@ -20,15 +21,16 @@ export async function GET() {
     prisma.product.count({ where: { stockQty: { lt: 50 } } }),
     prisma.salesOrder.aggregate({ _sum: { totalAmountKrw: true } }),
     prisma.salesOrder.groupBy({
-      by: ["channel"],
+      by: ["channelCode"],
       _sum: { totalAmountKrw: true },
       orderBy: { _sum: { totalAmountKrw: "desc" } },
     }),
     prisma.$queryRaw<Array<{ category: string; revenue: bigint }>>`
-      SELECT p.category, SUM(i.amount_krw)::bigint AS revenue
+      SELECT c.name AS category, SUM(i.amount_krw)::bigint AS revenue
       FROM sales_order_items i
       JOIN products p ON p.product_id = i.product_id
-      GROUP BY p.category
+      JOIN product_categories c ON c.code = p.category_code
+      GROUP BY c.name
       ORDER BY revenue DESC
       LIMIT 8
     `,
@@ -42,12 +44,18 @@ export async function GET() {
       where: { stockQty: { lt: 50 } },
       orderBy: { stockQty: "asc" },
       take: 10,
+      include: productInclude,
     }),
     prisma.salesOrder.groupBy({
-      by: ["status"],
+      by: ["statusCode"],
       _count: { _all: true },
     }),
   ]);
+
+  const channels = await prisma.salesChannel.findMany();
+  const channelName = new Map(channels.map((c) => [c.code, c.name]));
+  const statuses = await prisma.orderStatus.findMany();
+  const statusName = new Map(statuses.map((s) => [s.code, s.name]));
 
   return NextResponse.json({
     kpis: {
@@ -58,7 +66,7 @@ export async function GET() {
       totalRevenue: Number(revenueAgg._sum.totalAmountKrw ?? 0),
     },
     channelRevenue: channelRevenue.map((row) => ({
-      channel: row.channel,
+      channel: channelName.get(row.channelCode) ?? row.channelCode,
       revenue: Number(row._sum.totalAmountKrw ?? 0),
     })),
     categoryRevenue: categoryRevenue.map((row) => ({
@@ -69,9 +77,9 @@ export async function GET() {
       month: row.month,
       revenue: Number(row.revenue),
     })),
-    lowStockProducts,
+    lowStockProducts: lowStockProducts.map(serializeProduct),
     statusCounts: statusCounts.map((row) => ({
-      status: row.status,
+      status: statusName.get(row.statusCode) ?? row.statusCode,
       count: row._count._all,
     })),
   });

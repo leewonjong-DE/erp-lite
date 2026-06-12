@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { customerInclude, serializeCustomer } from "@/lib/serialize";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -14,40 +15,47 @@ export async function GET(request: NextRequest) {
       ? {
           OR: [
             { customerName: { contains: search, mode: "insensitive" as const } },
-            { city: { contains: search, mode: "insensitive" as const } },
+            { city: { name: { contains: search, mode: "insensitive" as const } } },
           ],
         }
       : {}),
-    ...(customerType ? { customerType } : {}),
-    ...(tier ? { tier } : {}),
+    ...(customerType ? { customerTypeCode: customerType } : {}),
+    ...(tier ? { tierCode: tier } : {}),
   };
 
-  const [data, total] = await Promise.all([
+  const [rows, total] = await Promise.all([
     prisma.customer.findMany({
       where,
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { customerId: "asc" },
+      include: customerInclude,
     }),
     prisma.customer.count({ where }),
   ]);
 
-  return NextResponse.json({ data, total, page, limit });
+  return NextResponse.json({
+    data: rows.map(serializeCustomer),
+    total,
+    page,
+    limit,
+  });
 }
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const customer = await prisma.customer.create({
+  const row = await prisma.customer.create({
     data: {
       customerId: Number(body.customerId),
       customerName: body.customerName,
-      customerType: body.customerType,
-      city: body.city,
+      customerTypeCode: body.customerType,
+      cityCode: body.city,
       phone: body.phone,
       email: body.email,
       joinDate: new Date(body.joinDate),
-      tier: body.tier,
+      tierCode: body.tier,
     },
+    include: customerInclude,
   });
-  return NextResponse.json(customer, { status: 201 });
+  return NextResponse.json(serializeCustomer(row), { status: 201 });
 }

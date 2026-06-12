@@ -8,16 +8,94 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model CustomerType {
+  code      String     @id @db.VarChar(20)
+  name      String
+  sortOrder Int        @default(0) @map("sort_order")
+  customers Customer[]
+
+  @@map("customer_types")
+}
+
+model CustomerTier {
+  code      String     @id @db.VarChar(20)
+  name      String
+  sortOrder Int        @default(0) @map("sort_order")
+  customers Customer[]
+
+  @@map("customer_tiers")
+}
+
+model City {
+  code      String     @id @db.VarChar(20)
+  name      String
+  customers Customer[]
+
+  @@map("cities")
+}
+
+model Brand {
+  code     String    @id @db.VarChar(50)
+  name     String
+  products Product[]
+
+  @@map("brands")
+}
+
+model ProductCategory {
+  code     String    @id @db.VarChar(50)
+  name     String
+  products Product[]
+
+  @@map("product_categories")
+}
+
+model ProductStatus {
+  code     String    @id @db.VarChar(20)
+  name     String
+  products Product[]
+
+  @@map("product_statuses")
+}
+
+model OrderStatus {
+  code      String       @id @db.VarChar(20)
+  name      String
+  sortOrder Int          @default(0) @map("sort_order")
+  orders    SalesOrder[]
+
+  @@map("order_statuses")
+}
+
+model SalesChannel {
+  code   String       @id @db.VarChar(20)
+  name   String
+  orders SalesOrder[]
+
+  @@map("sales_channels")
+}
+
+model PaymentMethod {
+  code   String       @id @db.VarChar(20)
+  name   String
+  orders SalesOrder[]
+
+  @@map("payment_methods")
+}
+
 model Customer {
-  customerId   Int          @id @map("customer_id")
-  customerName String       @map("customer_name")
-  customerType String       @map("customer_type")
-  city         String
-  phone        String
-  email        String
-  joinDate     DateTime     @map("join_date") @db.Date
-  tier         String
-  orders       SalesOrder[]
+  customerId       Int          @id @map("customer_id")
+  customerName     String       @map("customer_name")
+  customerTypeCode String       @map("customer_type_code") @db.VarChar(20)
+  cityCode         String       @map("city_code") @db.VarChar(20)
+  phone            String
+  email            String
+  joinDate         DateTime     @map("join_date") @db.Date
+  tierCode         String       @map("tier_code") @db.VarChar(20)
+  customerType     CustomerType @relation(fields: [customerTypeCode], references: [code])
+  city             City         @relation(fields: [cityCode], references: [code])
+  tier             CustomerTier @relation(fields: [tierCode], references: [code])
+  orders           SalesOrder[]
 
   @@map("customers")
 }
@@ -25,27 +103,33 @@ model Customer {
 model Product {
   productId    Int               @id @map("product_id")
   productName  String            @map("product_name")
-  category     String
-  brand        String
+  categoryCode String            @map("category_code") @db.VarChar(50)
+  brandCode    String            @map("brand_code") @db.VarChar(50)
   unitCostKrw  Int               @map("unit_cost_krw")
   unitPriceKrw Int               @map("unit_price_krw")
   stockQty     Int               @map("stock_qty")
-  status       String
+  statusCode   String            @map("status_code") @db.VarChar(20)
+  category     ProductCategory   @relation(fields: [categoryCode], references: [code])
+  brand        Brand             @relation(fields: [brandCode], references: [code])
+  productStatus ProductStatus    @relation(fields: [statusCode], references: [code])
   orderItems   SalesOrderItem[]
 
   @@map("products")
 }
 
 model SalesOrder {
-  orderNo         Int              @id @map("order_no")
-  customerId      Int              @map("customer_id")
-  orderDate       DateTime         @map("order_date") @db.Date
-  status          String
-  channel         String
-  paymentMethod   String           @map("payment_method")
-  totalAmountKrw  Int              @map("total_amount_krw")
-  customer        Customer         @relation(fields: [customerId], references: [customerId])
-  items           SalesOrderItem[]
+  orderNo             Int             @id @map("order_no")
+  customerId          Int             @map("customer_id")
+  orderDate           DateTime        @map("order_date") @db.Date
+  statusCode          String          @map("status_code") @db.VarChar(20)
+  channelCode         String          @map("channel_code") @db.VarChar(20)
+  paymentMethodCode   String          @map("payment_method_code") @db.VarChar(20)
+  totalAmountKrw      Int             @map("total_amount_krw")
+  customer            Customer        @relation(fields: [customerId], references: [customerId])
+  orderStatus         OrderStatus     @relation(fields: [statusCode], references: [code])
+  salesChannel        SalesChannel    @relation(fields: [channelCode], references: [code])
+  paymentMethod       PaymentMethod   @relation(fields: [paymentMethodCode], references: [code])
+  items               SalesOrderItem[]
 
   @@map("sales_orders")
 }

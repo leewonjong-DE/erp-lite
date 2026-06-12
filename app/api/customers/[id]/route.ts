@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { customerInclude, serializeCustomer } from "@/lib/serialize";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -7,12 +8,15 @@ export async function GET(_request: NextRequest, { params }: Params) {
   const { id } = await params;
   const customer = await prisma.customer.findUnique({
     where: { customerId: Number(id) },
-    include: { orders: { take: 10, orderBy: { orderDate: "desc" } } },
+    include: {
+      ...customerInclude,
+      orders: { take: 10, orderBy: { orderDate: "desc" } },
+    },
   });
   if (!customer) {
     return NextResponse.json({ error: "고객을 찾을 수 없습니다." }, { status: 404 });
   }
-  return NextResponse.json(customer);
+  return NextResponse.json(serializeCustomer(customer));
 }
 
 export async function PUT(request: NextRequest, { params }: Params) {
@@ -22,15 +26,16 @@ export async function PUT(request: NextRequest, { params }: Params) {
     where: { customerId: Number(id) },
     data: {
       customerName: body.customerName,
-      customerType: body.customerType,
-      city: body.city,
+      customerTypeCode: body.customerType,
+      cityCode: body.city,
       phone: body.phone,
       email: body.email,
       joinDate: new Date(body.joinDate),
-      tier: body.tier,
+      tierCode: body.tier,
     },
+    include: customerInclude,
   });
-  return NextResponse.json(customer);
+  return NextResponse.json(serializeCustomer(customer));
 }
 
 export async function DELETE(_request: NextRequest, { params }: Params) {

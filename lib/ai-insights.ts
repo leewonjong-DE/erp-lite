@@ -2,6 +2,7 @@ import type { DashboardData } from "@/lib/get-dashboard-data";
 
 export type AiInsightsResult = {
   source: "ai" | "rule";
+  showApiSetupHint?: boolean;
   summary: string;
   highlights: string[];
   risks: string[];
@@ -210,7 +211,7 @@ export async function generateInsights(data: DashboardData): Promise<AiInsightsR
     return await generateGeminiInsights(context);
   } catch (err) {
     if (err instanceof Error && err.message === "API_KEY_MISSING") {
-      return generateRuleBasedInsights(data);
+      return { ...generateRuleBasedInsights(data), showApiSetupHint: true };
     }
     console.error("AI insights fallback:", err);
     const fallback = generateRuleBasedInsights(data);

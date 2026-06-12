@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 type InsightsData = {
   source: "ai" | "rule";
+  showApiSetupHint?: boolean;
   summary: string;
   highlights: string[];
   risks: string[];
@@ -74,7 +75,7 @@ export default function AiInsights() {
         <InsightList title="권장 액션" items={data.actions} tone="action" />
       </div>
 
-      {data.source === "rule" ? (
+      {data.showApiSetupHint ? (
         <p className="mt-4 text-xs text-zinc-500">
           GEMINI_API_KEY 또는 JEM_API_KEY를 .env.local에 설정하면 Gemini AI 브리핑이 활성화됩니다.
         </p>

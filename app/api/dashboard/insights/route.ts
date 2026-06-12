@@ -13,7 +13,7 @@ const getCachedInsights = unstable_cache(
     ]);
     return { ...insights, evidence };
   },
-  ["dashboard-insights-v8"],
+  ["dashboard-insights-v9"],
   { revalidate: 300 },
 );
 

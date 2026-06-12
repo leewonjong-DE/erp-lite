@@ -167,11 +167,20 @@ export function buildEvidenceCatalog(data: DashboardData): Record<string, Insigh
 
     vip_inactive: {
       topicId: "vip_inactive",
-      title: "VIP 이탈 위험",
-      reasoning: `VIP 등급 고객 중 180일 이상 미주문 ${data.vipInactive.length}명입니다.`,
-      metrics: [{ label: "180일+ 미주문 VIP", value: `${data.vipInactive.length}명` }],
-      details: data.vipInactive.slice(0, 5).map((c) => `${c.name} · ${c.daysSince}일 미주문`),
-      source: "customers · sales_orders (VIP + last_order_date)",
+      title: "VIP 장기 미주문",
+      reasoning: `VIP 등급 고객 중 180일 이상 주문이 없는 ${data.vipInactive.length}명입니다. 아래 목록이 해당 브리핑의 근거입니다.`,
+      metrics: [
+        { label: "180일+ 미주문 VIP", value: `${data.vipInactive.length}명` },
+        {
+          label: "기준",
+          value: "180일+ 미주문",
+          hint: "VIP 등급 · last_order_date",
+        },
+      ],
+      details: data.vipInactive.map((c) =>
+        `#${c.customerId} ${c.name} · ${c.daysSince >= 9999 ? "주문 없음" : `${c.daysSince}일 미주문`}`,
+      ),
+      source: "customers · sales_orders (tier=VIP, 180일+ 미주문)",
     },
 
     new_customer_no_order: {
@@ -250,37 +259,98 @@ export function buildEvidenceCatalog(data: DashboardData): Record<string, Insigh
   return catalog;
 }
 
-const TOPIC_MATCHERS: Array<{ topicId: string; patterns: RegExp[] }> = [
+const TOPIC_MATCHERS: Array<{ topicId: string; patterns: RegExp[]; priority: number }> = [
+  {
+    topicId: "vip_inactive",
+    priority: 100,
+    patterns: [
+      /장기\s*미주문\s*VIP|VIP\s*장기\s*미주문/i,
+      /미주문\s*VIP|VIP.*미주문|VIP.*이탈/i,
+      /180일.*VIP|VIP.*180일/i,
+    ],
+  },
+  {
+    topicId: "new_customer_no_order",
+    priority: 90,
+    patterns: [/신규.*미주문|미주문.*신규|온보딩|웰컴/i],
+  },
+  {
+    topicId: "new_customer_one_order",
+    priority: 90,
+    patterns: [/재구매 대기|1회.*구매|첫 구매 후/i],
+  },
+  {
+    topicId: "new_customer_repeat",
+    priority: 85,
+    patterns: [/재구매율|신규 고객.*재구매/i],
+  },
+  {
+    topicId: "stale_orders",
+    priority: 80,
+    patterns: [/7일.*미처리|장기.*미처리|미처리 주문.*일/i],
+  },
   {
     topicId: "monthly_revenue",
+    priority: 70,
     patterns: [/매출.*전월|전월.*매출|매출.*감소|매출.*증가|주문 건수|주문.*줄|주문.*감소|월 매출/i],
   },
   {
+    topicId: "pending_orders",
+    priority: 70,
+    patterns: [/미처리|처리 대기|밀린|적체|출고.*지연/i],
+  },
+  {
+    topicId: "low_stock",
+    priority: 65,
+    patterns: [/재고|품절|SKU|입고|발주/i],
+  },
+  {
+    topicId: "cancel_return",
+    priority: 65,
+    patterns: [/취소|반품/i],
+  },
+  {
     topicId: "total_revenue_margin",
+    priority: 60,
     patterns: [/누적 매출|총매출|총 매출|마진율|마진/i],
   },
-  { topicId: "avg_order_value", patterns: [/평균 주문|객단가|B2B.*단가/i] },
-  { topicId: "active_customers", patterns: [/활성 고객|고객.*명/i] },
-  { topicId: "pending_orders", patterns: [/미처리|처리 대기|밀린|적체|934|출고.*지연/i] },
-  { topicId: "stale_orders", patterns: [/7일|장기.*미처리|미처리 주문.*일/i] },
-  { topicId: "low_stock", patterns: [/재고|품절|SKU|입고|발주/i] },
-  { topicId: "vip_inactive", patterns: [/VIP|이탈|180일|미주문 VIP/i] },
-  { topicId: "new_customer_no_order", patterns: [/신규.*미주문|미주문.*신규|온보딩|웰컴/i] },
-  { topicId: "new_customer_one_order", patterns: [/재구매 대기|1회.*구매|첫 구매 후/i] },
-  { topicId: "new_customer_repeat", patterns: [/재구매율|신규 고객.*재구매/i] },
-  { topicId: "cancel_return", patterns: [/취소|반품/i] },
-  { topicId: "top_channel", patterns: [/채널|영업사원|온라인|매장|전화/i] },
+  {
+    topicId: "avg_order_value",
+    priority: 55,
+    patterns: [/평균 주문|객단가|B2B.*단가/i],
+  },
+  {
+    topicId: "active_customers",
+    priority: 50,
+    patterns: [/활성\s*고객|고객\s*활성|활성도/i],
+  },
+  {
+    topicId: "top_channel",
+    priority: 45,
+    patterns: [/채널|영업사원|온라인|매장|전화/i],
+  },
 ];
 
+const VALID_TOPIC_IDS = new Set(TOPIC_MATCHERS.map((m) => m.topicId));
+
 export function inferTopicId(text: string): string | null {
-  for (const { topicId, patterns } of TOPIC_MATCHERS) {
-    if (patterns.some((p) => p.test(text))) return topicId;
+  let best: { topicId: string; priority: number } | null = null;
+
+  for (const { topicId, patterns, priority } of TOPIC_MATCHERS) {
+    if (patterns.some((p) => p.test(text))) {
+      if (!best || priority > best.priority) {
+        best = { topicId, priority };
+      }
+    }
   }
-  return null;
+
+  return best?.topicId ?? null;
 }
 
 export function toInsightItem(text: string, topicId?: string | null): InsightItem {
-  return { text, topicId: topicId ?? inferTopicId(text) };
+  const resolved =
+    topicId && VALID_TOPIC_IDS.has(topicId) ? topicId : inferTopicId(text);
+  return { text, topicId: resolved };
 }
 
 export function attachEvidenceToInsights(

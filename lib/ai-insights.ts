@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type { DashboardData } from "@/lib/get-dashboard-data";
-import { attachEvidenceToInsights, type InsightItem } from "@/lib/insight-evidence";
+import { toInsightItem, type InsightItem } from "@/lib/insight-evidence";
 
 export type AiInsightsResult = {
   source: "ai" | "rule";
@@ -202,13 +202,18 @@ async function generateGeminiInsights(context: string): Promise<AiInsightsResult
 - JSON에 없는 수치를 만들지 말 것
 - 실무자가 바로 실행할 수 있는 구체적 권장 액션 포함
 - 각 배열 항목은 1문장, 80자 이내 권장
+- 각 항목에 topicId를 반드시 지정 (근거 데이터 연결용). 아래 목록에서만 선택:
+  monthly_revenue, total_revenue_margin, avg_order_value, active_customers,
+  pending_orders, stale_orders, low_stock, vip_inactive,
+  new_customer_no_order, new_customer_one_order, new_customer_repeat,
+  cancel_return, top_channel
 
 응답 JSON 스키마:
 {
   "summary": "경영·운영 종합 요약 2~3문장",
-  "highlights": ["긍정/핵심 성과 2~3개"],
-  "risks": ["리스크·주의사항 2~4개"],
-  "actions": ["권장 액션 3~5개"]
+  "highlights": [{ "text": "...", "topicId": "..." }],
+  "risks": [{ "text": "...", "topicId": "..." }],
+  "actions": [{ "text": "...", "topicId": "..." }]
 }
 
 대시보드 데이터:
@@ -231,17 +236,24 @@ ${context}`;
 
   const parsed = JSON.parse(text) as {
     summary: string;
-    highlights: string[];
-    risks: string[];
-    actions: string[];
+    highlights: Array<string | { text: string; topicId?: string }>;
+    risks: Array<string | { text: string; topicId?: string }>;
+    actions: Array<string | { text: string; topicId?: string }>;
   };
+
+  function normalizeItems(items: Array<string | { text: string; topicId?: string }>): InsightItem[] {
+    return items.map((item) => {
+      if (typeof item === "string") return toInsightItem(item);
+      return toInsightItem(item.text, item.topicId ?? null);
+    });
+  }
 
   return {
     source: "ai",
     summary: parsed.summary,
-    highlights: attachEvidenceToInsights(parsed.highlights ?? []),
-    risks: attachEvidenceToInsights(parsed.risks ?? []),
-    actions: attachEvidenceToInsights(parsed.actions ?? []),
+    highlights: normalizeItems(parsed.highlights ?? []),
+    risks: normalizeItems(parsed.risks ?? []),
+    actions: normalizeItems(parsed.actions ?? []),
     generatedAt: new Date().toISOString(),
   };
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import EmptyState from "@/components/EmptyState";
+import { CustomerLink, OrderLink } from "@/components/EntityLink";
 import PageHeader from "@/components/PageHeader";
 import Pagination from "@/components/Pagination";
 import StatusBadge from "@/components/StatusBadge";
@@ -131,16 +132,15 @@ export default function OrdersPage() {
                       className="border-t border-zinc-100 transition hover:bg-zinc-50"
                     >
                       <td className="px-4 py-3">
-                        <Link
-                          href={`/orders/${order.orderNo}`}
-                          className="font-medium text-blue-600 hover:underline"
-                        >
-                          {order.orderNo}
-                        </Link>
+                        <OrderLink orderNo={order.orderNo}>{order.orderNo}</OrderLink>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-medium">{order.customer.customerName}</div>
-                        <StatusBadge label={order.customer.tier} />
+                        <CustomerLink customerId={order.customerId}>
+                          {order.customer.customerName}
+                        </CustomerLink>
+                        <div className="mt-1">
+                          <StatusBadge label={order.customer.tier} />
+                        </div>
                       </td>
                       <td className="px-4 py-3">{formatDate(order.orderDate)}</td>
                       <td className="px-4 py-3">{order.channel}</td>

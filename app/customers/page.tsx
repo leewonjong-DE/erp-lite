@@ -1,6 +1,8 @@
 "use client";
 
 import EmptyState from "@/components/EmptyState";
+import { CustomerLink } from "@/components/EntityLink";
+import FilterBanner from "@/components/FilterBanner";
 import PageHeader from "@/components/PageHeader";
 import Pagination from "@/components/Pagination";
 import SearchInput from "@/components/SearchInput";
@@ -8,7 +10,8 @@ import StatusBadge from "@/components/StatusBadge";
 import { TableSkeleton } from "@/components/Skeleton";
 import { formatDate } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
-import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 type Customer = {
   customerId: number;
@@ -36,6 +39,17 @@ const inputClass =
   "w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm transition focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-200";
 
 export default function CustomersPage() {
+  return (
+    <Suspense fallback={<TableSkeleton rows={8} cols={6} />}>
+      <CustomersPageContent />
+    </Suspense>
+  );
+}
+
+function CustomersPageContent() {
+  const searchParams = useSearchParams();
+  const filterCustomerId = searchParams.get("customerId") ?? "";
+
   const [data, setData] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -50,11 +64,16 @@ export default function CustomersPage() {
 
   const debouncedSearch = useDebouncedValue(search);
 
+  useEffect(() => {
+    setPage(1);
+  }, [filterCustomerId]);
+
   const load = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({
       page: String(page),
       limit: "15",
+      ...(filterCustomerId ? { customerId: filterCustomerId } : {}),
       ...(debouncedSearch ? { search: debouncedSearch } : {}),
       ...(customerType ? { customerType } : {}),
       ...(tier ? { tier } : {}),
@@ -64,7 +83,7 @@ export default function CustomersPage() {
     setData(json.data);
     setTotal(json.total);
     setLoading(false);
-  }, [page, debouncedSearch, customerType, tier]);
+  }, [page, debouncedSearch, customerType, tier, filterCustomerId]);
 
   useEffect(() => {
     load();
@@ -126,6 +145,17 @@ export default function CustomersPage() {
   return (
     <div>
       <PageHeader title="고객 관리" description="고객 정보를 조회·등록·수정합니다." />
+
+      {filterCustomerId ? (
+        <FilterBanner
+          label={
+            data[0]
+              ? `고객 #${filterCustomerId} · ${data[0].customerName}`
+              : `고객 #${filterCustomerId}`
+          }
+          clearHref="/customers"
+        />
+      ) : null}
 
       <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-3">
         <SearchInput
@@ -195,7 +225,11 @@ export default function CustomersPage() {
                         className="border-t border-zinc-100 transition hover:bg-zinc-50"
                       >
                         <td className="px-4 py-3 text-zinc-500">{customer.customerId}</td>
-                        <td className="px-4 py-3 font-medium">{customer.customerName}</td>
+                        <td className="px-4 py-3 font-medium">
+                          <CustomerLink customerId={customer.customerId}>
+                            {customer.customerName}
+                          </CustomerLink>
+                        </td>
                         <td className="px-4 py-3">
                           <StatusBadge label={customer.customerType} />
                         </td>

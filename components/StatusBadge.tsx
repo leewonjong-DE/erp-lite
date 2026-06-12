@@ -12,7 +12,10 @@ const STATUS_STYLES: Record<string, string> = {
   단종: "bg-zinc-200 text-zinc-600",
   개인: "bg-sky-100 text-sky-800",
   법인: "bg-indigo-100 text-indigo-800",
-  대리점: "bg-teal-100 text-teal-800",
+  미주문: "bg-red-100 text-red-800",
+  첫구매: "bg-sky-100 text-sky-800",
+  재구매대기: "bg-amber-100 text-amber-800",
+  재구매: "bg-emerald-100 text-emerald-800",
 };
 
 export default function StatusBadge({ label }: { label: string }) {

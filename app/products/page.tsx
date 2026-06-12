@@ -1,6 +1,8 @@
 "use client";
 
 import EmptyState from "@/components/EmptyState";
+import { ProductLink } from "@/components/EntityLink";
+import FilterBanner from "@/components/FilterBanner";
 import PageHeader from "@/components/PageHeader";
 import Pagination from "@/components/Pagination";
 import SearchInput from "@/components/SearchInput";
@@ -8,7 +10,8 @@ import StatusBadge from "@/components/StatusBadge";
 import { TableSkeleton } from "@/components/Skeleton";
 import { calcMarginPct, formatKrw } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 type Product = {
   productId: number;
@@ -36,6 +39,17 @@ const inputClass =
   "w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm transition focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-200";
 
 export default function ProductsPage() {
+  return (
+    <Suspense fallback={<TableSkeleton rows={8} cols={6} />}>
+      <ProductsPageContent />
+    </Suspense>
+  );
+}
+
+function ProductsPageContent() {
+  const searchParams = useSearchParams();
+  const filterProductId = searchParams.get("productId") ?? "";
+
   const [data, setData] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -54,11 +68,16 @@ export default function ProductsPage() {
   const debouncedSearch = useDebouncedValue(search);
   const debouncedCategory = useDebouncedValue(category);
 
+  useEffect(() => {
+    setPage(1);
+  }, [filterProductId]);
+
   const load = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({
       page: String(page),
       limit: "15",
+      ...(filterProductId ? { productId: filterProductId } : {}),
       ...(debouncedSearch ? { search: debouncedSearch } : {}),
       ...(debouncedCategory ? { category: debouncedCategory } : {}),
       ...(lowStock ? { lowStock: "true" } : {}),
@@ -69,7 +88,7 @@ export default function ProductsPage() {
     setTotal(json.total);
     setStockDraft({});
     setLoading(false);
-  }, [page, debouncedSearch, debouncedCategory, lowStock]);
+  }, [page, debouncedSearch, debouncedCategory, lowStock, filterProductId]);
 
   useEffect(() => {
     load();
@@ -149,6 +168,17 @@ export default function ProductsPage() {
     <div>
       <PageHeader title="상품·재고" description="상품 카탈로그와 재고 수량을 관리합니다." />
 
+      {filterProductId ? (
+        <FilterBanner
+          label={
+            data[0]
+              ? `상품 #${filterProductId} · ${data[0].productName}`
+              : `상품 #${filterProductId}`
+          }
+          clearHref="/products"
+        />
+      ) : null}
+
       <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-3">
         <SearchInput
           value={search}
@@ -215,7 +245,9 @@ export default function ProductsPage() {
                           className="border-t border-zinc-100 transition hover:bg-zinc-50"
                         >
                           <td className="px-4 py-3">
-                            <div className="font-medium">{product.productName}</div>
+                            <ProductLink productId={product.productId}>
+                              {product.productName}
+                            </ProductLink>
                             <div className="text-xs text-zinc-400">{product.brand}</div>
                           </td>
                           <td className="px-4 py-3">{product.category}</td>

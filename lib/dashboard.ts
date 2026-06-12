@@ -47,10 +47,27 @@ type DashboardRow = {
   vip_inactive: Array<{ customerId: number; name: string; daysSince: number }>;
   stale_orders: Array<{
     orderNo: number;
+    customerId: number;
     customerName: string;
     orderDate: string;
     daysPending: number;
     amount: number;
+  }>;
+  new_customers_90d: number;
+  new_no_order: number;
+  new_one_order_risk: number;
+  new_repeat: number;
+  new_first_buy: number;
+  new_customer_watchlist: Array<{
+    customerId: number;
+    name: string;
+    tier: string;
+    joinDate: string;
+    daysSinceJoin: number;
+    orderCount: number;
+    status: string;
+    idleDays: number | null;
+    lastOrderDate: string | null;
   }>;
 };
 
@@ -93,6 +110,37 @@ export async function fetchDashboardRow(): Promise<DashboardRow> {
       GROUP BY c.name
       ORDER BY revenue DESC
       LIMIT 8
+    ),
+    new_customer_stats AS (
+      SELECT c.customer_id, c.customer_name, t.name AS tier, c.join_date,
+             (ref.d - c.join_date)::int AS days_since_join,
+             COALESCE(os.order_count, 0) AS order_count,
+             os.first_order, os.last_order,
+             CASE
+               WHEN COALESCE(os.order_count, 0) = 0 THEN '미주문'
+               WHEN os.order_count = 1 AND (ref.d - os.last_order) >= 30 THEN '재구매대기'
+               WHEN os.order_count = 1 THEN '첫구매'
+               ELSE '재구매'
+             END AS status,
+             CASE
+               WHEN COALESCE(os.order_count, 0) = 0 THEN (ref.d - c.join_date)::int
+               WHEN os.order_count = 1 THEN (ref.d - os.last_order)::int
+               ELSE NULL
+             END AS idle_days
+      FROM customers c
+      JOIN customer_tiers t ON t.code = c.tier_code
+      CROSS JOIN ref
+      LEFT JOIN (
+        SELECT o.customer_id,
+               COUNT(*) FILTER (WHERE o.status_code NOT IN ('취소', '반품')) AS order_count,
+               MIN(o.order_date) AS first_order,
+               MAX(o.order_date) AS last_order
+        FROM sales_orders o
+        JOIN customers c2 ON c2.customer_id = o.customer_id
+        WHERE o.order_date >= c2.join_date
+        GROUP BY o.customer_id
+      ) os ON os.customer_id = c.customer_id
+      WHERE c.join_date >= ref.d - INTERVAL '90 days'
     )
     SELECT
       (SELECT COUNT(*)::int FROM customers) AS customer_count,
@@ -257,7 +305,8 @@ export async function fetchDashboardRow(): Promise<DashboardRow> {
       (
         SELECT COALESCE(json_agg(t ORDER BY "orderDate"), '[]'::json)
         FROM (
-          SELECT o.order_no AS "orderNo", c.customer_name AS "customerName",
+          SELECT o.order_no AS "orderNo", c.customer_id AS "customerId",
+                 c.customer_name AS "customerName",
                  o.order_date::text AS "orderDate",
                  (ref.d - o.order_date)::int AS "daysPending",
                  o.total_amount_krw::bigint AS amount
@@ -269,7 +318,30 @@ export async function fetchDashboardRow(): Promise<DashboardRow> {
           ORDER BY o.order_date
           LIMIT 8
         ) t
-      ) AS stale_orders
+      ) AS stale_orders,
+      (SELECT COUNT(*)::int FROM new_customer_stats) AS new_customers_90d,
+      (SELECT COUNT(*)::int FROM new_customer_stats WHERE status = '미주문') AS new_no_order,
+      (SELECT COUNT(*)::int FROM new_customer_stats WHERE status = '재구매대기') AS new_one_order_risk,
+      (SELECT COUNT(*)::int FROM new_customer_stats WHERE status = '재구매') AS new_repeat,
+      (SELECT COUNT(*)::int FROM new_customer_stats WHERE status = '첫구매') AS new_first_buy,
+      (
+        SELECT COALESCE(json_agg(t ORDER BY priority, "idleDays" DESC NULLS LAST), '[]'::json)
+        FROM (
+          SELECT customer_id AS "customerId", customer_name AS name, tier,
+                 join_date::text AS "joinDate",
+                 days_since_join AS "daysSinceJoin",
+                 order_count AS "orderCount",
+                 status,
+                 idle_days AS "idleDays",
+                 last_order::text AS "lastOrderDate",
+                 CASE status WHEN '재구매대기' THEN 1 WHEN '미주문' THEN 2 ELSE 3 END AS priority
+          FROM new_customer_stats
+          WHERE status IN ('미주문', '재구매대기')
+            AND (status = '재구매대기' OR days_since_join >= 7)
+          ORDER BY priority, idle_days DESC NULLS LAST
+          LIMIT 12
+        ) t
+      ) AS new_customer_watchlist
   `;
 
   if (!row) {

@@ -1,12 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import AiInsights from "@/components/AiInsights";
 import KpiCard from "@/components/KpiCard";
+import NewCustomerMonitor from "@/components/NewCustomerMonitor";
+import { CustomerLink, OrderLink, ProductLink } from "@/components/EntityLink";
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
 import { DashboardSkeleton } from "@/components/Skeleton";
 import { formatDate, formatKrw } from "@/lib/format";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 const DashboardCharts = dynamic(() => import("@/components/DashboardCharts"), {
@@ -71,11 +73,31 @@ type DashboardData = {
   }>;
   staleOrders: Array<{
     orderNo: number;
+    customerId: number;
     customerName: string;
     orderDate: string;
     daysPending: number;
     amount: number;
   }>;
+  newCustomerMonitoring: {
+    total90d: number;
+    noOrder: number;
+    oneOrderRisk: number;
+    firstBuy: number;
+    repeat: number;
+    repeatRate: number;
+    watchlist: Array<{
+      customerId: number;
+      name: string;
+      tier: string;
+      joinDate: string;
+      daysSinceJoin: number;
+      orderCount: number;
+      status: string;
+      idleDays: number | null;
+      lastOrderDate: string | null;
+    }>;
+  };
 };
 
 export default function DashboardPage() {
@@ -141,6 +163,8 @@ export default function DashboardPage() {
           </button>
         }
       />
+
+      <AiInsights />
 
       {data.alerts.length > 0 ? (
         <div className="mb-6 space-y-2">
@@ -219,6 +243,8 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      <NewCustomerMonitor data={data.newCustomerMonitoring} />
+
       <DashboardCharts
         channelRevenue={data.channelRevenue}
         categoryMargin={data.categoryMargin}
@@ -234,13 +260,9 @@ export default function DashboardPage() {
           subtitle="배송완료 매출 — Key Account 관리"
           headers={["고객", "등급", "매출", "주문"]}
           rows={data.topCustomers.map((c) => [
-            <Link
-              key={c.customerId}
-              href="/customers"
-              className="font-medium text-blue-600 hover:underline"
-            >
+            <CustomerLink key={c.customerId} customerId={c.customerId}>
               {c.name}
-            </Link>,
+            </CustomerLink>,
             <StatusBadge key={`t-${c.customerId}`} label={c.tier} />,
             formatKrw(c.revenue),
             `${c.orders}건`,
@@ -252,7 +274,9 @@ export default function DashboardPage() {
           subtitle="배송완료 매출 — 주력 SKU"
           headers={["상품", "카테고리", "수량", "매출"]}
           rows={data.topProducts.map((p) => [
-            p.name.length > 24 ? `${p.name.slice(0, 24)}…` : p.name,
+            <ProductLink key={p.productId} productId={p.productId}>
+              {p.name.length > 24 ? `${p.name.slice(0, 24)}…` : p.name}
+            </ProductLink>,
             p.category,
             p.qty.toLocaleString(),
             formatKrw(p.revenue),
@@ -267,13 +291,9 @@ export default function DashboardPage() {
           headers={["상품", "재고", "90일 판매", "품절 예상"]}
           emptyMessage="긴급 재고 SKU 없음"
           rows={data.stockAlerts.map((p) => [
-            <Link
-              key={p.productId}
-              href="/products"
-              className="hover:text-blue-600 hover:underline"
-            >
+            <ProductLink key={p.productId} productId={p.productId}>
               {p.name.length > 22 ? `${p.name.slice(0, 22)}…` : p.name}
-            </Link>,
+            </ProductLink>,
             <span key={`s-${p.productId}`} className="font-medium text-red-600">
               {p.stockQty}
             </span>,
@@ -292,13 +312,9 @@ export default function DashboardPage() {
           headers={["고객", "미주문 기간"]}
           emptyMessage="이탈 위험 VIP 없음"
           rows={data.vipInactive.map((c) => [
-            <Link
-              key={c.customerId}
-              href="/customers"
-              className="font-medium hover:text-blue-600 hover:underline"
-            >
+            <CustomerLink key={c.customerId} customerId={c.customerId}>
               {c.name}
-            </Link>,
+            </CustomerLink>,
             c.daysSince >= 9999 ? "주문 없음" : `${c.daysSince}일`,
           ])}
         />
@@ -311,14 +327,12 @@ export default function DashboardPage() {
             subtitle="7일+ 주문접수 상태 — 처리 지연"
             headers={["주문번호", "고객", "접수일", "경과", "금액"]}
             rows={data.staleOrders.map((o) => [
-              <Link
-                key={o.orderNo}
-                href={`/orders/${o.orderNo}`}
-                className="font-medium text-blue-600 hover:underline"
-              >
+              <OrderLink key={o.orderNo} orderNo={o.orderNo}>
                 {o.orderNo}
-              </Link>,
-              o.customerName,
+              </OrderLink>,
+              <CustomerLink key={`c-${o.orderNo}`} customerId={o.customerId}>
+                {o.customerName}
+              </CustomerLink>,
               formatDate(o.orderDate),
               <span key={`d-${o.orderNo}`} className="font-medium text-amber-700">
                 {o.daysPending}일

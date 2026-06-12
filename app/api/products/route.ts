@@ -11,8 +11,10 @@ export async function GET(request: NextRequest) {
   const brand = searchParams.get("brand") ?? "";
   const status = searchParams.get("status") ?? "";
   const lowStock = searchParams.get("lowStock") === "true";
+  const productId = searchParams.get("productId") ?? "";
 
   const where = {
+    ...(productId ? { productId: Number(productId) } : {}),
     ...(search
       ? {
           OR: [

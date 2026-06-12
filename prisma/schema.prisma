@@ -98,6 +98,7 @@ model Customer {
   orders           SalesOrder[]
 
   @@index([tierCode])
+  @@index([joinDate])
   @@map("customers")
 }
 

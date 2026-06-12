@@ -9,8 +9,10 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get("search") ?? "";
   const customerType = searchParams.get("customerType") ?? "";
   const tier = searchParams.get("tier") ?? "";
+  const customerId = searchParams.get("customerId") ?? "";
 
   const where = {
+    ...(customerId ? { customerId: Number(customerId) } : {}),
     ...(search
       ? {
           OR: [

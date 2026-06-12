@@ -2,6 +2,7 @@
 
 import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
+import { CustomerLink, ProductLink } from "@/components/EntityLink";
 import { TableSkeleton } from "@/components/Skeleton";
 import { formatDate, formatKrw } from "@/lib/format";
 import Link from "next/link";
@@ -27,7 +28,7 @@ type OrderDetail = {
     unitPriceKrw: number;
     discountPct: number;
     amountKrw: number;
-    product: { productName: string; category: string; brand: string };
+    product: { productId: number; productName: string; category: string; brand: string };
   }>;
 };
 
@@ -282,7 +283,9 @@ export default function OrderDetailPage() {
       <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-5">
         <p className="text-sm text-zinc-500">고객 정보</p>
         <p className="mt-1 font-medium">
-          {order.customer.customerName}{" "}
+          <CustomerLink customerId={order.customer.customerId}>
+            {order.customer.customerName}
+          </CustomerLink>{" "}
           <StatusBadge label={order.customer.tier} /> · {order.customer.city}
         </p>
         <p className="mt-4 text-sm text-zinc-500">상태 변경</p>
@@ -319,7 +322,9 @@ export default function OrderDetailPage() {
             {order.items.map((item) => (
               <tr key={item.orderItemId} className="border-t border-zinc-100 hover:bg-zinc-50">
                 <td className="px-4 py-3">
-                  <div className="font-medium">{item.product.productName}</div>
+                  <ProductLink productId={item.product.productId}>
+                    {item.product.productName}
+                  </ProductLink>
                   <div className="text-xs text-zinc-400">
                     {item.product.brand} · {item.product.category}
                   </div>

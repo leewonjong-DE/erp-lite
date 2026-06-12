@@ -1,3 +1,4 @@
+import { GoogleGenAI } from "@google/genai";
 import type { DashboardData } from "@/lib/get-dashboard-data";
 
 export type AiInsightsResult = {
@@ -158,31 +159,17 @@ async function generateGeminiInsights(context: string): Promise<AiInsightsResult
 대시보드 데이터:
 ${context}`;
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.3,
-        },
-      }),
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      temperature: 0.3,
     },
-  );
+  });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 200)}`);
-  }
-
-  const json = await res.json();
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+  const text = response.text;
   if (!text) {
     throw new Error("Gemini returned empty response");
   }
@@ -214,10 +201,6 @@ export async function generateInsights(data: DashboardData): Promise<AiInsightsR
       return { ...generateRuleBasedInsights(data), showApiSetupHint: true };
     }
     console.error("AI insights fallback:", err);
-    const fallback = generateRuleBasedInsights(data);
-    return {
-      ...fallback,
-      summary: `${fallback.summary} (AI 생성 실패 — 규칙 기반 요약으로 표시)`,
-    };
+    return generateRuleBasedInsights(data);
   }
 }

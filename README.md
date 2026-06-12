@@ -40,6 +40,87 @@ CSV 실습 데이터를 Supabase PostgreSQL에 적재하고, Next.js로 CRUD·�
 | `/products` | 상품·재고 목록, 마진율 표시, 재고 인라인 수정, CRUD |
 | `/orders` | 주문 목록·필터(상태/채널), 상세, 상태 변경, 신규 주문(품목 다중) |
 
+### 경영·운영 대시보드 (`/`)
+
+단순 건수 나열이 아니라 **매출·마진·재고·고객 이탈** 등 실무 의사결정에 쓰는 지표를 한 화면에 모았습니다.  
+모든 “최근 N일”·“기준월” 계산은 데이터 내 **최신 주문일** `MAX(order_date)` 를 기준으로 합니다.
+
+#### KPI (8개)
+
+**매출·수익성**
+
+| 지표 | 설명 | 집계 기준 |
+|------|------|-----------|
+| 기준월 매출 | 데이터 최신 월 매출 | 취소·반품 제외, 전월 대비 % 표시 |
+| 누적 매출 | 전체 기간 매출 합계 | 취소·반품 제외 |
+| 평균 객단가 | 주문당 평균 금액 | **배송완료** 주문 |
+| 총 마진율 | (매출 − 원가) / 매출 | **배송완료** 품목 (`unit_cost_krw` 기준) |
+
+**운영·리스크**
+
+| 지표 | 설명 | 집계 기준 |
+|------|------|-----------|
+| 처리 대기 | 미완료 주문 | 상태 = 주문접수 · 결제완료 · 배송중 |
+| 취소·반품율 | 전체 주문 대비 | 취소 + 반품 / 전체 주문 |
+| 활성 고객 | 최근 구매 고객 | 최근 90일 내 주문(취소·반품 제외) / 전체 고객 |
+| 재고 긴급 SKU | 발주 검토 대상 | 재고 50 미만 **또는** 30일 내 품절 예상 |
+
+#### 상단 알림
+
+조건에 해당하면 경고·안내 배너를 표시합니다.
+
+| 알림 | 조건 | 용도 |
+|------|------|------|
+| 처리 대기 주문 | 미완료 주문 1건 이상 | 출고·배송 처리 |
+| 장기 미처리 주문 | 7일+ `주문접수` 상태 | 처리 지연 확인 |
+| 재고 긴급 | 긴급 SKU 1개 이상 | 발주·입고 검토 |
+| VIP 이탈 위험 | 180일+ 미주문 VIP | 영업 follow-up |
+
+#### 차트 (6종)
+
+| 차트 | 내용 |
+|------|------|
+| 월별 매출·주문 추이 | 최근 12개월, 매출(막대) + 주문(선) |
+| 주문 상태별 현황 | 상태별 건수 — 병목 구간 파악 |
+| 채널별 매출 | 배송완료 기준 |
+| 고객 등급별 매출 | VIP · 일반 · 휴면 |
+| 결제수단별 매출 | 카드·현금·계좌이체·여신 비중 (파이) |
+| 카테고리별 매출·마진율 | 수익성 낮은 카테고리 식별 |
+
+#### 액션 테이블
+
+| 섹션 | 내용 | 실무 활용 |
+|------|------|-----------|
+| TOP 10 고객 | 배송완료 매출·주문 수 | Key Account 관리 |
+| TOP 10 상품 | 배송완료 매출·판매 수량 | 주력 SKU 파악 |
+| 재고 긴급 알림 | 재고, 90일 판매량, **품절 예상일** | 발주 우선순위 |
+| VIP 이탈 위험 | 180일+ 미주문 VIP | 이탈 방지 영업 |
+| 장기 미처리 주문 | 7일+ `주문접수` | CS·물류 처리 |
+
+**품절 예상일** = `재고 ÷ (최근 90일 판매량 / 90)` (일 단위, 판매 이력 없으면 표시 안 함)
+
+#### API 응답 구조 (`GET /api/dashboard`)
+
+```json
+{
+  "kpis": { "referenceMonth", "monthRevenue", "monthChangePct", "totalRevenue", ... },
+  "alerts": [{ "level": "warning|info", "title", "message" }],
+  "statusCounts": [{ "status", "count", "amount" }],
+  "channelRevenue": [{ "channel", "revenue" }],
+  "categoryMargin": [{ "category", "revenue", "marginPct" }],
+  "monthlyRevenue": [{ "month", "revenue", "orders" }],
+  "paymentMix": [{ "method", "revenue", "count" }],
+  "tierRevenue": [{ "tier", "revenue", "customers" }],
+  "topCustomers": [{ "customerId", "name", "tier", "revenue", "orders" }],
+  "topProducts": [{ "productId", "name", "category", "qty", "revenue" }],
+  "stockAlerts": [{ "productId", "name", "stockQty", "sold90d", "daysToStockout" }],
+  "vipInactive": [{ "customerId", "name", "daysSince" }],
+  "staleOrders": [{ "orderNo", "customerName", "orderDate", "daysPending", "amount" }]
+}
+```
+
+구현: `app/api/dashboard/route.ts` (Prisma + Raw SQL), UI: `app/page.tsx`, 차트: `components/DashboardCharts.tsx`
+
 ### API 엔드포인트
 
 | Method | Path | 설명 |
@@ -64,6 +145,7 @@ erp-lite/
 │   └── api/                     # REST API
 ├── components/
 │   ├── Sidebar.tsx
+│   ├── KpiCard.tsx              # KPI 카드 (전월 대비 trend)
 │   ├── DashboardCharts.tsx      # Recharts (client-only)
 │   └── ...
 ├── data/                        # CSV seed 원본

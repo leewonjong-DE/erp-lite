@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Customer {
+  customerId   Int          @id @map("customer_id")
+  customerName String       @map("customer_name")
+  customerType String       @map("customer_type")
+  city         String
+  phone        String
+  email        String
+  joinDate     DateTime     @map("join_date") @db.Date
+  tier         String
+  orders       SalesOrder[]
+
+  @@map("customers")
+}
+
+model Product {
+  productId    Int               @id @map("product_id")
+  productName  String            @map("product_name")
+  category     String
+  brand        String
+  unitCostKrw  Int               @map("unit_cost_krw")
+  unitPriceKrw Int               @map("unit_price_krw")
+  stockQty     Int               @map("stock_qty")
+  status       String
+  orderItems   SalesOrderItem[]
+
+  @@map("products")
+}
+
+model SalesOrder {
+  orderNo         Int              @id @map("order_no")
+  customerId      Int              @map("customer_id")
+  orderDate       DateTime         @map("order_date") @db.Date
+  status          String
+  channel         String
+  paymentMethod   String           @map("payment_method")
+  totalAmountKrw  Int              @map("total_amount_krw")
+  customer        Customer         @relation(fields: [customerId], references: [customerId])
+  items           SalesOrderItem[]
+
+  @@map("sales_orders")
+}
+
+model SalesOrderItem {
+  orderItemId  Int        @id @map("order_item_id")
+  orderNo      Int        @map("order_no")
+  productId    Int        @map("product_id")
+  qty          Int
+  unitPriceKrw Int        @map("unit_price_krw")
+  discountPct  Int        @map("discount_pct")
+  amountKrw    Int        @map("amount_krw")
+  order        SalesOrder @relation(fields: [orderNo], references: [orderNo], onDelete: Cascade)
+  product      Product    @relation(fields: [productId], references: [productId])
+
+  @@map("sales_order_items")
+}

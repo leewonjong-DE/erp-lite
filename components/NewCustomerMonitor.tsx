@@ -42,7 +42,7 @@ export default function NewCustomerMonitor({ data }: { data: NewCustomerMonitori
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <KpiCard
           label="신규 가입 (90일)"
-          value={data.total90d.toLocaleString()}
+          value={`${data.total90d.toLocaleString()}명`}
           hint="가입일 기준"
         />
         <KpiCard

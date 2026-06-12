@@ -1,13 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 import type { DashboardData } from "@/lib/get-dashboard-data";
+import { attachEvidenceToInsights, type InsightItem } from "@/lib/insight-evidence";
 
 export type AiInsightsResult = {
   source: "ai" | "rule";
   showApiSetupHint?: boolean;
   summary: string;
-  highlights: string[];
-  risks: string[];
-  actions: string[];
+  highlights: InsightItem[];
+  risks: InsightItem[];
+  actions: InsightItem[];
   generatedAt: string;
 };
 
@@ -61,57 +62,111 @@ export function buildInsightsContext(data: DashboardData): string {
 
 function generateRuleBasedInsights(data: DashboardData): AiInsightsResult {
   const { kpis } = data;
-  const highlights: string[] = [];
-  const risks: string[] = [];
-  const actions: string[] = [];
+  const highlights: InsightItem[] = [];
+  const risks: InsightItem[] = [];
+  const actions: InsightItem[] = [];
 
-  highlights.push(
-    `${kpis.referenceMonth} 매출 ${formatKrwShort(kpis.monthRevenue)}` +
+  highlights.push({
+    text:
+      `${kpis.referenceMonth} 매출 ${formatKrwShort(kpis.monthRevenue)}` +
       (kpis.monthChangePct !== null
         ? `, 전월 대비 ${kpis.monthChangePct > 0 ? "+" : ""}${kpis.monthChangePct}%`
         : ""),
-  );
-  highlights.push(`누적 매출 ${formatKrwShort(kpis.totalRevenue)}, 마진율 ${kpis.grossMarginPct}%`);
-  highlights.push(
-    `활성 고객 ${kpis.activeCustomers90d.toLocaleString()}명 / 전체 ${kpis.customerCount.toLocaleString()}명`,
-  );
+    topicId: "monthly_revenue",
+  });
+  highlights.push({
+    text: `누적 매출 ${formatKrwShort(kpis.totalRevenue)}, 마진율 ${kpis.grossMarginPct}%`,
+    topicId: "total_revenue_margin",
+  });
+  highlights.push({
+    text: `활성 고객 ${kpis.activeCustomers90d.toLocaleString()}명 / 전체 ${kpis.customerCount.toLocaleString()}명`,
+    topicId: "active_customers",
+  });
 
   if (kpis.pendingOrderCount > 0) {
-    risks.push(`처리 대기 주문 ${kpis.pendingOrderCount}건 (${formatKrwShort(kpis.pendingOrderAmount)})`);
-    actions.push("미완료 주문 출고·배송 처리 우선 검토");
+    risks.push({
+      text: `처리 대기 주문 ${kpis.pendingOrderCount}건 (${formatKrwShort(kpis.pendingOrderAmount)})`,
+      topicId: "pending_orders",
+    });
+    actions.push({
+      text: "미완료 주문 출고·배송 처리 우선 검토",
+      topicId: "pending_orders",
+    });
   }
   if (data.staleOrders.length > 0) {
-    risks.push(`7일+ 미처리 주문 ${data.staleOrders.length}건`);
-    actions.push("장기 '주문접수' 건 CS·물류팀 즉시 확인");
+    risks.push({
+      text: `7일+ 미처리 주문 ${data.staleOrders.length}건`,
+      topicId: "stale_orders",
+    });
+    actions.push({
+      text: "장기 '주문접수' 건 CS·물류팀 즉시 확인",
+      topicId: "stale_orders",
+    });
   }
   if (kpis.lowStockCount > 0) {
-    risks.push(`재고 긴급 SKU ${kpis.lowStockCount}개`);
-    actions.push("품절 임박 SKU 발주·입고 검토");
+    risks.push({
+      text: `재고 긴급 SKU ${kpis.lowStockCount}개`,
+      topicId: "low_stock",
+    });
+    actions.push({
+      text: "품절 임박 SKU 발주·입고 검토",
+      topicId: "low_stock",
+    });
   }
   if (data.vipInactive.length > 0) {
-    risks.push(`180일+ 미주문 VIP ${data.vipInactive.length}명`);
-    actions.push("VIP 고객 이탈 방지 영업 follow-up");
+    risks.push({
+      text: `180일+ 미주문 VIP ${data.vipInactive.length}명`,
+      topicId: "vip_inactive",
+    });
+    actions.push({
+      text: "VIP 고객 이탈 방지 영업 follow-up",
+      topicId: "vip_inactive",
+    });
   }
   const nc = data.newCustomerMonitoring;
   if (nc.noOrder > 0) {
-    risks.push(`신규 가입(90일) 중 미주문 ${nc.noOrder}명`);
-    actions.push("미주문 신규 고객 웰컴 콜·첫 구매 프로모션");
+    risks.push({
+      text: `신규 가입(90일) 중 미주문 ${nc.noOrder}명`,
+      topicId: "new_customer_no_order",
+    });
+    actions.push({
+      text: "미주문 신규 고객 웰컴 콜·첫 구매 프로모션",
+      topicId: "new_customer_no_order",
+    });
   }
   if (nc.oneOrderRisk > 0) {
-    risks.push(`첫 구매 후 재구매 대기 ${nc.oneOrderRisk}명 (30일+)`);
-    actions.push("1회 구매 신규 고객 재구매 제안·관계 점검");
+    risks.push({
+      text: `첫 구매 후 재구매 대기 ${nc.oneOrderRisk}명 (30일+)`,
+      topicId: "new_customer_one_order",
+    });
+    actions.push({
+      text: "1회 구매 신규 고객 재구매 제안·관계 점검",
+      topicId: "new_customer_one_order",
+    });
   }
   if (nc.total90d > 0) {
-    highlights.push(`신규 고객 ${nc.total90d}명, 재구매율 ${nc.repeatRate}%`);
+    highlights.push({
+      text: `신규 고객 ${nc.total90d}명, 재구매율 ${nc.repeatRate}%`,
+      topicId: "new_customer_repeat",
+    });
   }
   if (kpis.cancelReturnRate > 10) {
-    risks.push(`취소·반품율 ${kpis.cancelReturnRate}% — 업계 평균 대비 높을 수 있음`);
-    actions.push("취소·반품 원인 분석 및 프로세스 개선");
+    risks.push({
+      text: `취소·반품율 ${kpis.cancelReturnRate}% — 업계 평균 대비 높을 수 있음`,
+      topicId: "cancel_return",
+    });
+    actions.push({
+      text: "취소·반품 원인 분석 및 프로세스 개선",
+      topicId: "cancel_return",
+    });
   }
 
   const topChannel = data.channelRevenue[0];
   if (topChannel) {
-    actions.push(`주력 채널 '${topChannel.channel}' 매출 집중 — 채널별 전략 점검`);
+    actions.push({
+      text: `주력 채널 '${topChannel.channel}' 매출 집중 — 채널별 전략 점검`,
+      topicId: "top_channel",
+    });
   }
 
   const summary =
@@ -184,9 +239,9 @@ ${context}`;
   return {
     source: "ai",
     summary: parsed.summary,
-    highlights: parsed.highlights ?? [],
-    risks: parsed.risks ?? [],
-    actions: parsed.actions ?? [],
+    highlights: attachEvidenceToInsights(parsed.highlights ?? []),
+    risks: attachEvidenceToInsights(parsed.risks ?? []),
+    actions: attachEvidenceToInsights(parsed.actions ?? []),
     generatedAt: new Date().toISOString(),
   };
 }

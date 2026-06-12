@@ -10,11 +10,21 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get("status") ?? "";
   const channel = searchParams.get("channel") ?? "";
   const customerId = searchParams.get("customerId") ?? "";
+  const search = searchParams.get("search")?.trim() ?? "";
+  const orderNo = /^\d+$/.test(search) ? Number(search) : null;
 
   const where = {
     ...(status ? { statusCode: status } : {}),
     ...(channel ? { channelCode: channel } : {}),
     ...(customerId ? { customerId: Number(customerId) } : {}),
+    ...(search
+      ? {
+          OR: [
+            ...(orderNo ? [{ orderNo }] : []),
+            { customer: { customerName: { contains: search, mode: "insensitive" as const } } },
+          ],
+        }
+      : {}),
   };
 
   const [rows, total] = await Promise.all([

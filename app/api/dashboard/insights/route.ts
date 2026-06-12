@@ -2,13 +2,18 @@ import { unstable_cache } from "next/cache";
 import { NextResponse } from "next/server";
 import { generateInsights } from "@/lib/ai-insights";
 import { getDashboardData } from "@/lib/get-dashboard-data";
+import { buildEvidenceCatalog } from "@/lib/insight-evidence";
 
 const getCachedInsights = unstable_cache(
   async () => {
     const data = await getDashboardData();
-    return generateInsights(data);
+    const [insights, evidence] = await Promise.all([
+      generateInsights(data),
+      Promise.resolve(buildEvidenceCatalog(data)),
+    ]);
+    return { ...insights, evidence };
   },
-  ["dashboard-insights-v7"],
+  ["dashboard-insights-v8"],
   { revalidate: 300 },
 );
 

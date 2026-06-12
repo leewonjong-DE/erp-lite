@@ -53,9 +53,9 @@ function ProductsPageContent() {
   const [data, setData] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
-  const [lowStock, setLowStock] = useState(false);
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
+  const [category, setCategory] = useState(() => searchParams.get("category") ?? "");
+  const [lowStock, setLowStock] = useState(() => searchParams.get("lowStock") === "true");
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
@@ -69,8 +69,11 @@ function ProductsPageContent() {
   const debouncedCategory = useDebouncedValue(category);
 
   useEffect(() => {
+    setSearch(searchParams.get("search") ?? "");
+    setCategory(searchParams.get("category") ?? "");
+    setLowStock(searchParams.get("lowStock") === "true");
     setPage(1);
-  }, [filterProductId]);
+  }, [searchParams, filterProductId]);
 
   const load = useCallback(async () => {
     setLoading(true);

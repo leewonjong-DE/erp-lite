@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import AiInsights from "@/components/AiInsights";
+import AiSearch from "@/components/AiSearch";
 import KpiCard from "@/components/KpiCard";
 import NewCustomerMonitor from "@/components/NewCustomerMonitor";
 import { CustomerLink, OrderLink, ProductLink } from "@/components/EntityLink";
@@ -126,29 +127,40 @@ export default function DashboardPage() {
     load();
   }, [load]);
 
-  if (loading) return <DashboardSkeleton />;
-
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-red-50 px-6 py-16 text-center">
-        <p className="text-red-700">{error}</p>
-        <button
-          type="button"
-          className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
-          onClick={() => load()}
-        >
-          다시 시도
-        </button>
+      <div>
+        <AiSearch />
+        <div className="flex flex-col items-center justify-center rounded-xl border border-red-200 bg-red-50 px-6 py-16 text-center">
+          <p className="text-red-700">{error}</p>
+          <button
+            type="button"
+            className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+            onClick={() => load()}
+          >
+            다시 시도
+          </button>
+        </div>
       </div>
     );
   }
 
-  if (!data) return null;
+  if (!data && loading) {
+    return (
+      <div>
+        <AiSearch />
+        <DashboardSkeleton />
+      </div>
+    );
+  }
+
+  if (!data) return <AiSearch />;
 
   const { kpis } = data;
 
   return (
     <div>
+      <AiSearch />
       <PageHeader
         title="경영·운영 대시보드"
         description="매출·마진·재고·고객 이탈 등 실무 의사결정 지표 (배송완료·최근월 기준)"
@@ -232,12 +244,12 @@ export default function DashboardPage() {
           />
           <KpiCard
             label="활성 고객"
-            value={kpis.activeCustomers90d.toLocaleString()}
-            hint={`최근 90일 주문 / 전체 ${kpis.customerCount.toLocaleString()}`}
+            value={`${kpis.activeCustomers90d.toLocaleString()}명`}
+            hint={`최근 90일 주문 / 전체 ${kpis.customerCount.toLocaleString()}명`}
           />
           <KpiCard
             label="재고 긴급 SKU"
-            value={kpis.lowStockCount.toLocaleString()}
+            value={`${kpis.lowStockCount.toLocaleString()}개`}
             hint="50개 미만 또는 30일 내 품절 예상"
           />
         </div>
@@ -278,7 +290,7 @@ export default function DashboardPage() {
               {p.name.length > 24 ? `${p.name.slice(0, 24)}…` : p.name}
             </ProductLink>,
             p.category,
-            p.qty.toLocaleString(),
+            `${p.qty.toLocaleString()}개`,
             formatKrw(p.revenue),
           ])}
         />
@@ -295,9 +307,9 @@ export default function DashboardPage() {
               {p.name.length > 22 ? `${p.name.slice(0, 22)}…` : p.name}
             </ProductLink>,
             <span key={`s-${p.productId}`} className="font-medium text-red-600">
-              {p.stockQty}
+              {p.stockQty}개
             </span>,
-            p.sold90d.toLocaleString(),
+            `${p.sold90d.toLocaleString()}개`,
             p.daysToStockout !== null ? (
               <span className="font-medium text-amber-700">{p.daysToStockout}일</span>
             ) : (

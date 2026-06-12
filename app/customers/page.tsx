@@ -53,9 +53,9 @@ function CustomersPageContent() {
   const [data, setData] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [customerType, setCustomerType] = useState("");
-  const [tier, setTier] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
+  const [customerType, setCustomerType] = useState(() => searchParams.get("customerType") ?? "");
+  const [tier, setTier] = useState(() => searchParams.get("tier") ?? "");
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
@@ -65,8 +65,11 @@ function CustomersPageContent() {
   const debouncedSearch = useDebouncedValue(search);
 
   useEffect(() => {
+    setSearch(searchParams.get("search") ?? "");
+    setCustomerType(searchParams.get("customerType") ?? "");
+    setTier(searchParams.get("tier") ?? "");
     setPage(1);
-  }, [filterCustomerId]);
+  }, [searchParams, filterCustomerId]);
 
   const load = useCallback(async () => {
     setLoading(true);

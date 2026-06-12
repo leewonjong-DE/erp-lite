@@ -4,11 +4,14 @@ import EmptyState from "@/components/EmptyState";
 import { CustomerLink, OrderLink } from "@/components/EntityLink";
 import PageHeader from "@/components/PageHeader";
 import Pagination from "@/components/Pagination";
+import SearchInput from "@/components/SearchInput";
 import StatusBadge from "@/components/StatusBadge";
 import { TableSkeleton } from "@/components/Skeleton";
 import { formatDate, formatKrw } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 type Order = {
   orderNo: number;
@@ -26,18 +29,44 @@ const inputClass =
   "w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm transition focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-200";
 
 export default function OrdersPage() {
+  return (
+    <Suspense fallback={<TableSkeleton rows={10} cols={7} />}>
+      <OrdersPageContent />
+    </Suspense>
+  );
+}
+
+function OrdersPageContent() {
+  const searchParams = useSearchParams();
+
   const [data, setData] = useState<Order[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [status, setStatus] = useState("");
-  const [channel, setChannel] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
+  const [filterCustomerId, setFilterCustomerId] = useState(
+    () => searchParams.get("customerId") ?? "",
+  );
+  const [status, setStatus] = useState(() => searchParams.get("status") ?? "");
+  const [channel, setChannel] = useState(() => searchParams.get("channel") ?? "");
   const [loading, setLoading] = useState(true);
+
+  const debouncedSearch = useDebouncedValue(search);
+
+  useEffect(() => {
+    setSearch(searchParams.get("search") ?? "");
+    setFilterCustomerId(searchParams.get("customerId") ?? "");
+    setStatus(searchParams.get("status") ?? "");
+    setChannel(searchParams.get("channel") ?? "");
+    setPage(1);
+  }, [searchParams]);
 
   const load = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({
       page: String(page),
       limit: "15",
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      ...(filterCustomerId ? { customerId: filterCustomerId } : {}),
       ...(status ? { status } : {}),
       ...(channel ? { channel } : {}),
     });
@@ -46,7 +75,7 @@ export default function OrdersPage() {
     setData(json.data);
     setTotal(json.total);
     setLoading(false);
-  }, [page, status, channel]);
+  }, [page, debouncedSearch, filterCustomerId, status, channel]);
 
   useEffect(() => {
     load();
@@ -69,7 +98,15 @@ export default function OrdersPage() {
         }
       />
 
-      <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-2">
+      <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-3">
+        <SearchInput
+          value={search}
+          onChange={(value) => {
+            setPage(1);
+            setSearch(value);
+          }}
+          placeholder="주문번호 또는 고객명 검색"
+        />
         <select
           className={inputClass}
           value={status}

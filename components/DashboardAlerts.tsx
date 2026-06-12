@@ -229,40 +229,53 @@ function OrderPipelineDetail({ data }: { data: DashboardAlertsData }) {
               <p className="mt-0.5 text-xs font-medium text-[#02a84a]">→ {sla.actionHint}</p>
             </div>
 
-            {orders.length > 0 ? (
-              <ul className="divide-y divide-zinc-100">
-                {orders.map((o) => (
-                  <li
-                    key={o.orderNo}
-                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm"
-                  >
-                    <span className="min-w-0">
-                      <OrderLink orderNo={o.orderNo}>#{o.orderNo}</OrderLink>
-                      <span className="mx-1.5 text-zinc-300">·</span>
-                      <CustomerLink customerId={o.customerId}>{o.customerName}</CustomerLink>
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2 text-xs">
-                      <span className="text-zinc-500">{formatDate(o.orderDate)}</span>
-                      <span
-                        className={
-                          o.severity === "critical"
-                            ? "font-medium text-red-700"
-                            : "font-medium text-amber-700"
-                        }
+            {stat && stat.overdue > 0 ? (
+              orders.length > 0 ? (
+                <>
+                  <ul className="divide-y divide-zinc-100">
+                    {orders.map((o) => (
+                      <li
+                        key={o.orderNo}
+                        className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm"
                       >
-                        접수 후 {o.daysSinceOrder}일
-                        {o.overdueDays > 0 ? ` (+${o.overdueDays}일)` : ""}
-                      </span>
-                      {o.severity === "critical" ? (
-                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800">
-                          장기
+                        <span className="min-w-0">
+                          <OrderLink orderNo={o.orderNo}>#{o.orderNo}</OrderLink>
+                          <span className="mx-1.5 text-zinc-300">·</span>
+                          <CustomerLink customerId={o.customerId}>{o.customerName}</CustomerLink>
                         </span>
-                      ) : null}
-                      <span className="font-medium text-zinc-800">{formatKrw(o.amount)}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                        <span className="flex shrink-0 items-center gap-2 text-xs">
+                          <span className="text-zinc-500">{formatDate(o.orderDate)}</span>
+                          <span
+                            className={
+                              o.severity === "critical"
+                                ? "font-medium text-red-700"
+                                : "font-medium text-amber-700"
+                            }
+                          >
+                            접수 후 {o.daysSinceOrder}일
+                            {o.overdueDays > 0 ? ` (+${o.overdueDays}일)` : ""}
+                          </span>
+                          {o.severity === "critical" ? (
+                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800">
+                              장기
+                            </span>
+                          ) : null}
+                          <span className="font-medium text-zinc-800">{formatKrw(o.amount)}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {stat.overdue > orders.length ? (
+                    <p className="border-t border-zinc-100 px-3 py-2 text-center text-xs text-zinc-500">
+                      상위 {orders.length}건만 표시 · 외 {stat.overdue - orders.length}건
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <p className="px-3 py-4 text-center text-xs text-amber-700">
+                  지연 {stat.overdue.toLocaleString()}건 — 목록을 불러오지 못했습니다
+                </p>
+              )
             ) : (
               <p className="px-3 py-4 text-center text-xs text-emerald-600">기준 내 — 지연 없음</p>
             )}

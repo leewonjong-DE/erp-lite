@@ -295,6 +295,6 @@ async function buildDashboardData(): Promise<DashboardData> {
 
 export const getDashboardData = unstable_cache(
   buildDashboardData,
-  ["dashboard-v7"],
+  ["dashboard-v8"],
   { revalidate: 60 },
 );

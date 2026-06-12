@@ -357,50 +357,58 @@ export async function fetchDashboardRow(): Promise<DashboardRow> {
       ) AS order_pipeline_stats,
       (
         SELECT COALESCE(json_agg(t ORDER BY
+          CASE t.status WHEN '주문접수' THEN 1 WHEN '결제완료' THEN 2 WHEN '배송중' THEN 3 END,
           CASE t.severity WHEN 'critical' THEN 1 WHEN 'overdue' THEN 2 END,
           t."daysSinceOrder" DESC
         ), '[]'::json)
         FROM (
-          SELECT o.order_no AS "orderNo", c.customer_id AS "customerId",
-                 c.customer_name AS "customerName",
-                 o.order_date::text AS "orderDate",
-                 o.status_code AS status,
-                 o.total_amount_krw::bigint AS amount,
-                 (ref.d - o.order_date)::int AS "daysSinceOrder",
-                 CASE
-                   WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7
-                     THEN (ref.d - o.order_date)::int - 7
-                   WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3
-                     THEN (ref.d - o.order_date)::int - 3
-                   WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4
-                     THEN (ref.d - o.order_date)::int - 4
-                   WHEN o.status_code = '배송중' AND (ref.d - o.order_date) >= 6
-                     THEN (ref.d - o.order_date)::int - 6
-                 END AS "overdueDays",
-                 CASE
-                   WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7 THEN 'critical'
-                   WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3 THEN 'overdue'
-                   WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4 THEN 'overdue'
-                   WHEN o.status_code = '배송중' AND (ref.d - o.order_date) >= 6 THEN 'overdue'
-                 END AS severity
-          FROM sales_orders o
-          JOIN customers c ON c.customer_id = o.customer_id
-          CROSS JOIN ref
-          WHERE o.status_code IN ('주문접수', '결제완료', '배송중')
-            AND (
-              (o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3)
-              OR (o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4)
-              OR (o.status_code = '배송중' AND (ref.d - o.order_date) >= 6)
-            )
-          ORDER BY
-            CASE
-              WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7 THEN 1
-              WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3 THEN 2
-              WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4 THEN 3
-              ELSE 4
-            END,
-            (ref.d - o.order_date) DESC
-          LIMIT 24
+          SELECT *
+          FROM (
+            SELECT o.order_no AS "orderNo", c.customer_id AS "customerId",
+                   c.customer_name AS "customerName",
+                   o.order_date::text AS "orderDate",
+                   o.status_code AS status,
+                   o.total_amount_krw::bigint AS amount,
+                   (ref.d - o.order_date)::int AS "daysSinceOrder",
+                   CASE
+                     WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7
+                       THEN (ref.d - o.order_date)::int - 7
+                     WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3
+                       THEN (ref.d - o.order_date)::int - 3
+                     WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4
+                       THEN (ref.d - o.order_date)::int - 4
+                     WHEN o.status_code = '배송중' AND (ref.d - o.order_date) >= 6
+                       THEN (ref.d - o.order_date)::int - 6
+                   END AS "overdueDays",
+                   CASE
+                     WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7 THEN 'critical'
+                     WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3 THEN 'overdue'
+                     WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4 THEN 'overdue'
+                     WHEN o.status_code = '배송중' AND (ref.d - o.order_date) >= 6 THEN 'overdue'
+                   END AS severity,
+                   ROW_NUMBER() OVER (
+                     PARTITION BY o.status_code
+                     ORDER BY
+                       CASE
+                         WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7 THEN 1
+                         WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3 THEN 2
+                         WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4 THEN 1
+                         WHEN o.status_code = '배송중' AND (ref.d - o.order_date) >= 6 THEN 1
+                         ELSE 9
+                       END,
+                       (ref.d - o.order_date) DESC
+                   ) AS rn
+            FROM sales_orders o
+            JOIN customers c ON c.customer_id = o.customer_id
+            CROSS JOIN ref
+            WHERE o.status_code IN ('주문접수', '결제완료', '배송중')
+              AND (
+                (o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3)
+                OR (o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4)
+                OR (o.status_code = '배송중' AND (ref.d - o.order_date) >= 6)
+              )
+          ) ranked
+          WHERE rn <= 8
         ) t
       ) AS order_pipeline_overdue,
       (SELECT COUNT(*)::int FROM new_customer_stats) AS new_customers_90d,

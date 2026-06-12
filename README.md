@@ -35,7 +35,7 @@ CSV 실습 데이터를 Supabase PostgreSQL에 적재하고, Next.js로 CRUD·�
 
 | 경로 | 기능 |
 |------|------|
-| `/` | KPI(매출·주문·고객·상품·재고부족), 채널/카테고리/월별 차트, 재고 부족 TOP 10 |
+| `/` | 경영·운영 대시보드: 전월 대비 매출, 마진·객단가, 처리 대기·취소율, TOP 고객/상품, 재고 긴급·VIP 이탈·장기 미처리 알림, 6종 차트 |
 | `/customers` | 고객 목록·검색·필터(유형/등급), CRUD |
 | `/products` | 상품·재고 목록, 마진율 표시, 재고 인라인 수정, CRUD |
 | `/orders` | 주문 목록·필터(상태/채널), 상세, 상태 변경, 신규 주문(품목 다중) |
@@ -44,7 +44,7 @@ CSV 실습 데이터를 Supabase PostgreSQL에 적재하고, Next.js로 CRUD·�
 
 | Method | Path | 설명 |
 |--------|------|------|
-| GET | `/api/dashboard` | KPI·차트 집계 |
+| GET | `/api/dashboard` | KPI·알림·TOP N·재고/이탈/미처리 집계·차트 데이터 |
 | GET/POST | `/api/customers` | 고객 목록·생성 |
 | GET/PUT/DELETE | `/api/customers/[id]` | 고객 상세·수정·삭제 |
 | GET/POST | `/api/products` | 상품 목록·생성 |

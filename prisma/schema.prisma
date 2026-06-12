@@ -97,6 +97,7 @@ model Customer {
   tier             CustomerTier @relation(fields: [tierCode], references: [code])
   orders           SalesOrder[]
 
+  @@index([tierCode])
   @@map("customers")
 }
 
@@ -114,6 +115,8 @@ model Product {
   productStatus ProductStatus    @relation(fields: [statusCode], references: [code])
   orderItems   SalesOrderItem[]
 
+  @@index([stockQty])
+  @@index([categoryCode])
   @@map("products")
 }
 
@@ -131,6 +134,11 @@ model SalesOrder {
   paymentMethod       PaymentMethod   @relation(fields: [paymentMethodCode], references: [code])
   items               SalesOrderItem[]
 
+  @@index([statusCode])
+  @@index([orderDate])
+  @@index([customerId])
+  @@index([statusCode, orderDate])
+  @@index([channelCode])
   @@map("sales_orders")
 }
 
@@ -145,5 +153,7 @@ model SalesOrderItem {
   order        SalesOrder @relation(fields: [orderNo], references: [orderNo], onDelete: Cascade)
   product      Product    @relation(fields: [productId], references: [productId])
 
+  @@index([orderNo])
+  @@index([productId])
   @@map("sales_order_items")
 }

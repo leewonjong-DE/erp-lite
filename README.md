@@ -119,13 +119,29 @@ CSV 실습 데이터를 Supabase PostgreSQL에 적재하고, Next.js로 CRUD·�
 }
 ```
 
-구현: `app/api/dashboard/route.ts` (Prisma + Raw SQL), UI: `app/page.tsx`, 차트: `components/DashboardCharts.tsx`
+구현: `lib/dashboard.ts` (단일 Raw SQL), `app/api/dashboard/route.ts` (캐시), UI: `app/page.tsx`, 차트: `components/DashboardCharts.tsx`
+
+#### 성능 최적화
+
+대시보드는 Supabase 원격 DB를 쓰므로, 초기 구현(21개 병렬 쿼리)은 첫 로드가 수십 초 걸릴 수 있었습니다. 아래처럼 개선했습니다.
+
+| 항목 | 내용 |
+|------|------|
+| 쿼리 통합 | 21개 → **1개** SQL (`lib/dashboard.ts`). `MAX(order_date)` 등 중복 CTE 제거 |
+| 서버 캐시 | `unstable_cache` 60초 + `Cache-Control: s-maxage=60` |
+| DB 인덱스 | `sales_orders(status_code, order_date, …)`, `sales_order_items(order_no, product_id)`, `products(stock_qty)`, `customers(tier_code)` |
+
+로컬 기준 첫 요청 ~300ms, 캐시 히트 시 ~10ms 수준입니다. 스키마 변경 후 인덱스 반영:
+
+```bash
+npm run db:push
+```
 
 ### API 엔드포인트
 
 | Method | Path | 설명 |
 |--------|------|------|
-| GET | `/api/dashboard` | KPI·알림·TOP N·재고/이탈/미처리 집계·차트 데이터 |
+| GET | `/api/dashboard` | KPI·알림·TOP N·차트 데이터 (60초 서버 캐시) |
 | GET/POST | `/api/customers` | 고객 목록·생성 |
 | GET/PUT/DELETE | `/api/customers/[id]` | 고객 상세·수정·삭제 |
 | GET/POST | `/api/products` | 상품 목록·생성 |
@@ -151,6 +167,7 @@ erp-lite/
 ├── data/                        # CSV seed 원본
 ├── lib/
 │   ├── prisma.ts                # Prisma 클라이언트
+│   ├── dashboard.ts             # 대시보드 단일 SQL 집계
 │   ├── serialize.ts             # FK → API 응답 문자열 변환
 │   └── format.ts                # ₩ 포맷, 금액 계산
 ├── prisma/
@@ -166,6 +183,7 @@ erp-lite/
 - **주문 스냅샷:** `sales_order_items.unit_price_krw`는 주문 시점 단가 보존 (카탈로그 가격 변경 대비)
 - **파생 컬럼:** `total_amount_krw`, `amount_krw`는 품목 합계·할인 계산 결과 (CSV와 100% 일치 검증됨)
 - **VIP 등급:** CSV `tier` 컬럼 값을 그대로 사용. 자동 승격/강등 로직 없음
+- **대시보드 성능:** 단일 SQL + 60초 서버 캐시 + 조회용 인덱스로 원격 DB 왕복 최소화
 
 ---
 
@@ -285,6 +303,12 @@ erDiagram
 - `sales_orders.total_amount_krw` — 품목 SUM 캐시 (리포팅 성능)
 - `sales_order_items.amount_krw` — 라인 금액 캐시
 - `sales_order_items.unit_price_krw` — 주문 시점 가격 스냅샷
+
+**조회 인덱스 (대시보드·필터)**
+- `sales_orders`: `status_code`, `order_date`, `customer_id`, `(status_code, order_date)`, `channel_code`
+- `sales_order_items`: `order_no`, `product_id`
+- `products`: `stock_qty`, `category_code`
+- `customers`: `tier_code`
 
 **미구현 (향후 확장)**
 - 재고 입출고 이력 (`inventory_transactions`)

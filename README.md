@@ -212,6 +212,142 @@ erDiagram
 
 ---
 
+## CSV vs DB 차이점
+
+### 한눈에 비교
+
+| | CSV (원본) | DB (현재) |
+|---|-----------|-----------|
+| **파일/테이블 수** | 4개 flat 파일 | **13개** 테이블 (마스터 9 + 트랜잭션 4) |
+| **관계** | 컬럼 값으로만 암시 (`customer_id` 등) | **FK 제약**으로 명시 |
+| **코드값** | 각 행에 문자열 직접 입력 | **마스터 테이블** + `_code` FK |
+| **데이터 건수** | 2,000 / 1,000 / 5,000 / 14,974 | **동일** (값 변경 없음) |
+| **컬럼명** | `customer_type`, `tier` … | `customer_type_code`, `tier_code` … |
+
+### 파일별 컬럼 매핑
+
+#### `customers.csv` → `customers` + 마스터 3개
+
+| CSV 컬럼 | DB 컬럼 | 변경 |
+|----------|---------|------|
+| `customer_id` | `customer_id` | 동일 |
+| `customer_name` | `customer_name` | 동일 |
+| `customer_type` | `customer_type_code` | → FK `customer_types` |
+| `city` | `city_code` | → FK `cities` |
+| `phone` | `phone` | 동일 |
+| `email` | `email` | 동일 |
+| `join_date` | `join_date` | 동일 |
+| `tier` | `tier_code` | → FK `customer_tiers` |
+
+**신규 테이블:** `customer_types`, `customer_tiers`, `cities`  
+(CSV에 없던 테이블. `customers.csv`에서 **고유값을 추출**해 seed)
+
+#### `products.csv` → `products` + 마스터 3개
+
+| CSV 컬럼 | DB 컬럼 | 변경 |
+|----------|---------|------|
+| `product_id` | `product_id` | 동일 |
+| `product_name` | `product_name` | 동일 |
+| `category` | `category_code` | → FK `product_categories` |
+| `brand` | `brand_code` | → FK `brands` |
+| `unit_cost_krw` | `unit_cost_krw` | 동일 |
+| `unit_price_krw` | `unit_price_krw` | 동일 |
+| `stock_qty` | `stock_qty` | 동일 |
+| `status` | `status_code` | → FK `product_statuses` |
+
+**신규 테이블:** `product_categories`, `brands`, `product_statuses`
+
+#### `sales_orders.csv` → `sales_orders` + 마스터 3개
+
+| CSV 컬럼 | DB 컬럼 | 변경 |
+|----------|---------|------|
+| `order_no` | `order_no` | 동일 |
+| `customer_id` | `customer_id` | 동일 + **FK → customers** |
+| `order_date` | `order_date` | 동일 |
+| `status` | `status_code` | → FK `order_statuses` |
+| `channel` | `channel_code` | → FK `sales_channels` |
+| `payment_method` | `payment_method_code` | → FK `payment_methods` |
+| `total_amount_krw` | `total_amount_krw` | 동일 |
+
+**신규 테이블:** `order_statuses`, `sales_channels`, `payment_methods`
+
+#### `sales_order_items.csv` → `sales_order_items`
+
+| CSV 컬럼 | DB 컬럼 | 변경 |
+|----------|---------|------|
+| (전 컬럼) | (동일) | **구조 변경 없음** |
+| — | FK 제약 추가 | `order_no` → orders, `product_id` → products |
+| — | CASCADE DELETE | 주문 삭제 시 품목 자동 삭제 |
+
+### CSV에는 없고 DB에만 있는 것
+
+| 항목 | 설명 |
+|------|------|
+| 마스터 9테이블 | 코드·이름·정렬순(`sort_order`) 관리 |
+| FK 제약 | 존재하지 않는 고객/상품/코드 참조 차단 |
+| CASCADE DELETE | 주문 삭제 시 품목 연쇄 삭제 |
+| `lib/serialize.ts` | API 응답 시 FK → `"VIP"` 등 **CSV와 같은 문자열**로 변환 |
+
+### CSV와 동일하게 유지한 것
+
+| 항목 | 이유 |
+|------|------|
+| **모든 행·값** | 원본 데이터 신뢰. 임의 수정·VIP 재계산 안 함 |
+| **`tier` (VIP/일반/휴면)** | CSV에 있던 값 그대로. 앱이 기준을 정하지 않음 |
+| **`total_amount_krw`, `amount_krw`** | CSV와 100% 일치 검증. 컬럼 유지 |
+| **`unit_price_krw` (품목)** | 주문 시점 단가 스냅샷으로 유지 |
+| **4개 파일 구조** | `data/` CSV는 seed 입력으로 **원본 보존** |
+
+### 왜 이렇게 바꿨는가
+
+#### 1. flat CSV → 관계형 DB (4 → 13 테이블)
+
+CSV는 **분석·실습용 flat 파일**이고, ERP 웹앱은 **Supabase PostgreSQL** 위에서 동작합니다.  
+문자열 코드를 그대로 반복 저장하면:
+
+- `"VIP"` / `"vip"` / 오타 등 **데이터 불일치** 가능
+- 채널·상태 **추가/변경** 시 모든 행 수정 필요
+- 코드별 **메타데이터**(정렬, 설명, 활성 여부) 붙이기 어려움
+
+→ **마스터 테이블 + FK**로 분리 (3NF)
+
+#### 2. 컬럼명 `tier` → `tier_code`
+
+같은 이름의 **관계 객체**(`tier` → `CustomerTier`)와 구분하고,  
+"이 컬럼은 코드다"를 명확히 하기 위해 `_code` 접미사 사용.
+
+#### 3. FK 제약 추가
+
+CSV에서는 `customer_id=999999` 같은 **깨진 참조**를 막을 수 없음.  
+DB에서는 주문·품목이 반드시 존재하는 고객·상품만 참조.
+
+#### 4. API는 CSV와 같은 모양 유지
+
+DB 내부는 FK지만, 화면/API는 여전히 `tier: "VIP"`, `channel: "온라인"`으로 보여줌.  
+→ `lib/serialize.ts`가 **호환 레이어** 역할 (UI·CSV 사용자 관점 유지)
+
+#### 5. 바꾸지 않은 것 (의도적)
+
+| 항목 | 이유 |
+|------|------|
+| VIP 자동 산정 | CSV `tier`가 원본. 비즈니스 규칙이 데이터에 없음 |
+| `total_amount_krw` 제거 | 대시보드·리포트 **조회 성능**, CSV와 동일 구조 유지 |
+| CSV 파일 삭제/수정 | **재현 가능한 seed 원본**으로 `data/` 보존 |
+
+### 변환 흐름
+
+```
+CSV 4개 (flat)
+    │
+    ├─ 고유 코드값 추출 ──→ 마스터 9테이블 seed
+    │
+    └─ 각 행 매핑 ────────→ 트랜잭션 4테이블 seed (_code FK)
+                              │
+                              └─→ API serialize ──→ UI (CSV와 같은 문자열)
+```
+
+---
+
 ## 로컬 실행
 
 ### 1. 환경 변수

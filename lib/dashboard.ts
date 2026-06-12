@@ -17,6 +17,7 @@ type DashboardRow = {
   margin_cost: bigint;
   completed_orders: bigint;
   monthly_revenue: Array<{ month: string; revenue: number; orders: number }>;
+  monthly_customer_joins: Array<{ month: string; joins: number }>;
   status_counts: Array<{ status: string; count: number; amount: number }>;
   channel_revenue: Array<{ channel: string; revenue: number }>;
   payment_mix: Array<{ method: string; revenue: number; count: number }>;
@@ -52,6 +53,24 @@ type DashboardRow = {
     orderDate: string;
     daysPending: number;
     amount: number;
+  }>;
+  order_pipeline_stats: Array<{
+    status: string;
+    total: number;
+    amount: number;
+    overdue: number;
+    critical: number;
+  }>;
+  order_pipeline_overdue: Array<{
+    orderNo: number;
+    customerId: number;
+    customerName: string;
+    orderDate: string;
+    status: string;
+    amount: number;
+    daysSinceOrder: number;
+    overdueDays: number;
+    severity: string;
   }>;
   new_customers_90d: number;
   new_no_order: number;
@@ -180,6 +199,15 @@ export async function fetchDashboardRow(): Promise<DashboardRow> {
         ) t
       ) AS monthly_revenue,
       (
+        SELECT COALESCE(json_agg(t ORDER BY month), '[]'::json)
+        FROM (
+          SELECT TO_CHAR(join_date, 'YYYY-MM') AS month,
+                 COUNT(*)::int AS joins
+          FROM customers
+          GROUP BY 1
+        ) t
+      ) AS monthly_customer_joins,
+      (
         SELECT COALESCE(json_agg(t ORDER BY sort_order), '[]'::json)
         FROM (
           SELECT s.code AS status, s.sort_order,
@@ -303,22 +331,78 @@ export async function fetchDashboardRow(): Promise<DashboardRow> {
         ) t
       ) AS vip_inactive,
       (
-        SELECT COALESCE(json_agg(t ORDER BY "orderDate"), '[]'::json)
+        SELECT COALESCE(json_agg(t ORDER BY
+          CASE t.status WHEN '주문접수' THEN 1 WHEN '결제완료' THEN 2 WHEN '배송중' THEN 3 END
+        ), '[]'::json)
+        FROM (
+          SELECT status_code AS status,
+                 COUNT(*)::int AS total,
+                 COALESCE(SUM(total_amount_krw), 0)::bigint AS amount,
+                 COUNT(*) FILTER (WHERE severity IN ('overdue', 'critical'))::int AS overdue,
+                 COUNT(*) FILTER (WHERE severity = 'critical')::int AS critical
+          FROM (
+            SELECT o.status_code, o.total_amount_krw,
+              CASE
+                WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7 THEN 'critical'
+                WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3 THEN 'overdue'
+                WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4 THEN 'overdue'
+                WHEN o.status_code = '배송중' AND (ref.d - o.order_date) >= 6 THEN 'overdue'
+              END AS severity
+            FROM sales_orders o
+            CROSS JOIN ref
+            WHERE o.status_code IN ('주문접수', '결제완료', '배송중')
+          ) s
+          GROUP BY status_code
+        ) t
+      ) AS order_pipeline_stats,
+      (
+        SELECT COALESCE(json_agg(t ORDER BY
+          CASE t.severity WHEN 'critical' THEN 1 WHEN 'overdue' THEN 2 END,
+          t."daysSinceOrder" DESC
+        ), '[]'::json)
         FROM (
           SELECT o.order_no AS "orderNo", c.customer_id AS "customerId",
                  c.customer_name AS "customerName",
                  o.order_date::text AS "orderDate",
-                 (ref.d - o.order_date)::int AS "daysPending",
-                 o.total_amount_krw::bigint AS amount
+                 o.status_code AS status,
+                 o.total_amount_krw::bigint AS amount,
+                 (ref.d - o.order_date)::int AS "daysSinceOrder",
+                 CASE
+                   WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7
+                     THEN (ref.d - o.order_date)::int - 7
+                   WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3
+                     THEN (ref.d - o.order_date)::int - 3
+                   WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4
+                     THEN (ref.d - o.order_date)::int - 4
+                   WHEN o.status_code = '배송중' AND (ref.d - o.order_date) >= 6
+                     THEN (ref.d - o.order_date)::int - 6
+                 END AS "overdueDays",
+                 CASE
+                   WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7 THEN 'critical'
+                   WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3 THEN 'overdue'
+                   WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4 THEN 'overdue'
+                   WHEN o.status_code = '배송중' AND (ref.d - o.order_date) >= 6 THEN 'overdue'
+                 END AS severity
           FROM sales_orders o
           JOIN customers c ON c.customer_id = o.customer_id
           CROSS JOIN ref
-          WHERE o.status_code = '주문접수'
-            AND o.order_date < ref.d - INTERVAL '7 days'
-          ORDER BY o.order_date
-          LIMIT 8
+          WHERE o.status_code IN ('주문접수', '결제완료', '배송중')
+            AND (
+              (o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3)
+              OR (o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4)
+              OR (o.status_code = '배송중' AND (ref.d - o.order_date) >= 6)
+            )
+          ORDER BY
+            CASE
+              WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 7 THEN 1
+              WHEN o.status_code = '주문접수' AND (ref.d - o.order_date) >= 3 THEN 2
+              WHEN o.status_code = '결제완료' AND (ref.d - o.order_date) >= 4 THEN 3
+              ELSE 4
+            END,
+            (ref.d - o.order_date) DESC
+          LIMIT 24
         ) t
-      ) AS stale_orders,
+      ) AS order_pipeline_overdue,
       (SELECT COUNT(*)::int FROM new_customer_stats) AS new_customers_90d,
       (SELECT COUNT(*)::int FROM new_customer_stats WHERE status = '미주문') AS new_no_order,
       (SELECT COUNT(*)::int FROM new_customer_stats WHERE status = '재구매대기') AS new_one_order_risk,

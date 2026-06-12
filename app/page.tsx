@@ -1,6 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import DashboardAlerts from "@/components/DashboardAlerts";
+import ForecastPanel from "@/components/ForecastPanel";
 import AiInsights from "@/components/AiInsights";
 import AiSearch from "@/components/AiSearch";
 import KpiCard from "@/components/KpiCard";
@@ -10,6 +12,8 @@ import PageHeader from "@/components/PageHeader";
 import StatusBadge from "@/components/StatusBadge";
 import { DashboardSkeleton } from "@/components/Skeleton";
 import { formatDate, formatKrw } from "@/lib/format";
+import type { DashboardForecasts } from "@/lib/forecast";
+import type { DashboardAlertId } from "@/lib/get-dashboard-data";
 import { useCallback, useEffect, useState } from "react";
 
 const DashboardCharts = dynamic(() => import("@/components/DashboardCharts"), {
@@ -38,11 +42,12 @@ type DashboardData = {
     lowStockCount: number;
     completedOrders: number;
   };
-  alerts: Array<{ level: "warning" | "info"; title: string; message: string }>;
+  alerts: Array<{ id: DashboardAlertId; level: "warning" | "info"; title: string; message: string }>;
   statusCounts: Array<{ status: string; count: number; amount: number }>;
   channelRevenue: Array<{ channel: string; revenue: number }>;
   categoryMargin: Array<{ category: string; revenue: number; marginPct: number }>;
   monthlyRevenue: Array<{ month: string; revenue: number; orders: number }>;
+  forecasts: DashboardForecasts;
   paymentMix: Array<{ method: string; revenue: number; count: number }>;
   tierRevenue: Array<{ tier: string; revenue: number; customers: number }>;
   topCustomers: Array<{
@@ -80,6 +85,26 @@ type DashboardData = {
     daysPending: number;
     amount: number;
   }>;
+  orderPipeline: {
+    stats: Array<{
+      status: string;
+      total: number;
+      amount: number;
+      overdue: number;
+      critical: number;
+    }>;
+    overdueOrders: Array<{
+      orderNo: number;
+      customerId: number;
+      customerName: string;
+      orderDate: string;
+      status: string;
+      amount: number;
+      daysSinceOrder: number;
+      overdueDays: number;
+      severity: "overdue" | "critical";
+    }>;
+  };
   newCustomerMonitoring: {
     total90d: number;
     noOrder: number;
@@ -178,24 +203,21 @@ export default function DashboardPage() {
 
       <AiInsights />
 
-      {data.alerts.length > 0 ? (
-        <div className="mb-6 space-y-2">
-          {data.alerts.map((alert) => (
-            <div
-              key={alert.title}
-              className={`rounded-lg border px-4 py-3 text-sm ${
-                alert.level === "warning"
-                  ? "border-amber-200 bg-amber-50 text-amber-900"
-                  : "border-blue-200 bg-blue-50 text-blue-900"
-              }`}
-            >
-              <span className="font-semibold">{alert.title}</span>
-              <span className="mx-2">·</span>
-              {alert.message}
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <DashboardAlerts
+        alerts={data.alerts}
+        data={{
+          kpis: {
+            pendingOrderCount: kpis.pendingOrderCount,
+            pendingOrderAmount: kpis.pendingOrderAmount,
+            lowStockCount: kpis.lowStockCount,
+          },
+          orderPipeline: data.orderPipeline,
+          stockAlerts: data.stockAlerts,
+          vipInactive: data.vipInactive,
+          staleOrders: data.staleOrders,
+          newCustomerMonitoring: data.newCustomerMonitoring,
+        }}
+      />
 
       <section>
         <h3 className="mb-3 text-sm font-medium text-zinc-500">매출·수익성</h3>
@@ -232,7 +254,11 @@ export default function DashboardPage() {
           <KpiCard
             label="처리 대기"
             value={`${kpis.pendingOrderCount}건`}
-            hint={formatKrw(kpis.pendingOrderAmount)}
+            hint={
+              data.orderPipeline.stats.reduce((s, p) => s + p.overdue, 0) > 0
+                ? `${formatKrw(kpis.pendingOrderAmount)} · 지연 ${data.orderPipeline.stats.reduce((s, p) => s + p.overdue, 0)}건`
+                : formatKrw(kpis.pendingOrderAmount)
+            }
           />
           <KpiCard
             label="취소·반품율"
@@ -254,6 +280,8 @@ export default function DashboardPage() {
           />
         </div>
       </section>
+
+      <ForecastPanel forecasts={data.forecasts} />
 
       <NewCustomerMonitor data={data.newCustomerMonitoring} />
 
@@ -336,7 +364,7 @@ export default function DashboardPage() {
         <div className="mt-8">
           <DataTable
             title="장기 미처리 주문"
-            subtitle="7일+ 주문접수 상태 — 처리 지연"
+            subtitle="주문접수 · 접수 후 7일+ (상태별 기준 초과)"
             headers={["주문번호", "고객", "접수일", "경과", "금액"]}
             rows={data.staleOrders.map((o) => [
               <OrderLink key={o.orderNo} orderNo={o.orderNo}>

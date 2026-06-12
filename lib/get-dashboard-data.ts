@@ -1,6 +1,13 @@
 import { unstable_cache } from "next/cache";
 import { fetchDashboardRow } from "@/lib/dashboard";
+import { buildDashboardForecasts, type DashboardForecasts } from "@/lib/forecast";
 import { prisma } from "@/lib/prisma";
+
+export type DashboardAlertId =
+  | "order_pipeline"
+  | "low_stock"
+  | "vip_inactive"
+  | "new_customer";
 
 export type DashboardData = {
   kpis: {
@@ -20,11 +27,18 @@ export type DashboardData = {
     lowStockCount: number;
     completedOrders: number;
   };
-  alerts: Array<{ level: "warning" | "info"; title: string; message: string }>;
+  alerts: Array<{
+    id: DashboardAlertId;
+    level: "warning" | "info";
+    title: string;
+    message: string;
+  }>;
   statusCounts: Array<{ status: string; count: number; amount: number }>;
   channelRevenue: Array<{ channel: string; revenue: number }>;
   categoryMargin: Array<{ category: string; revenue: number; marginPct: number }>;
   monthlyRevenue: Array<{ month: string; revenue: number; orders: number }>;
+  monthlyCustomerJoins: Array<{ month: string; joins: number }>;
+  forecasts: DashboardForecasts;
   paymentMix: Array<{ method: string; revenue: number; count: number }>;
   tierRevenue: Array<{ tier: string; revenue: number; customers: number }>;
   topCustomers: Array<{
@@ -58,6 +72,26 @@ export type DashboardData = {
     daysPending: number;
     amount: number;
   }>;
+  orderPipeline: {
+    stats: Array<{
+      status: string;
+      total: number;
+      amount: number;
+      overdue: number;
+      critical: number;
+    }>;
+    overdueOrders: Array<{
+      orderNo: number;
+      customerId: number;
+      customerName: string;
+      orderDate: string;
+      status: string;
+      amount: number;
+      daysSinceOrder: number;
+      overdueDays: number;
+      severity: "overdue" | "critical";
+    }>;
+  };
   newCustomerMonitoring: {
     total90d: number;
     noOrder: number;
@@ -115,25 +149,55 @@ async function buildDashboardData(): Promise<DashboardData> {
 
   const stockAlerts = row.stock_alerts ?? [];
   const vipInactive = row.vip_inactive ?? [];
-  const staleOrders = row.stale_orders ?? [];
+
+  const pipelineStats = (row.order_pipeline_stats ?? []).map((s) => ({
+    status: s.status,
+    total: s.total,
+    amount: Number(s.amount),
+    overdue: s.overdue,
+    critical: s.critical,
+  }));
+
+  const pipelineOverdue = (row.order_pipeline_overdue ?? []).map((o) => ({
+    orderNo: o.orderNo,
+    customerId: o.customerId,
+    customerName: o.customerName,
+    orderDate: o.orderDate,
+    status: o.status,
+    amount: Number(o.amount),
+    daysSinceOrder: o.daysSinceOrder,
+    overdueDays: o.overdueDays,
+    severity: o.severity as "overdue" | "critical",
+  }));
+
+  const staleOrders = pipelineOverdue
+    .filter((o) => o.status === "주문접수" && o.severity === "critical")
+    .map((o) => ({
+      orderNo: o.orderNo,
+      customerId: o.customerId,
+      customerName: o.customerName,
+      orderDate: o.orderDate,
+      daysPending: o.daysSinceOrder,
+      amount: o.amount,
+    }));
+
+  const totalOverdue = pipelineStats.reduce((s, p) => s + p.overdue, 0);
 
   const alerts: DashboardData["alerts"] = [];
-  if (Number(row.pending_count) > 0) {
+  if (totalOverdue > 0) {
+    const parts = pipelineStats
+      .filter((p) => p.overdue > 0)
+      .map((p) => `${p.status} ${p.overdue}건`);
     alerts.push({
-      level: "info",
-      title: "처리 대기 주문",
-      message: `${row.pending_count}건 · ${formatAmount(Number(row.pending_amount))} — 출고·배송 처리 필요`,
-    });
-  }
-  if (staleOrders.length > 0) {
-    alerts.push({
-      level: "warning",
-      title: "장기 미처리 주문",
-      message: `7일 이상 '주문접수' ${staleOrders.length}건 — 영업팀 확인 필요`,
+      id: "order_pipeline",
+      level: pipelineStats.some((p) => p.critical > 0) ? "warning" : "info",
+      title: "처리 지연 주문",
+      message: `${parts.join(" · ")} — 상태별 기준 초과`,
     });
   }
   if (stockAlerts.length > 0) {
     alerts.push({
+      id: "low_stock",
       level: "warning",
       title: "재고 긴급",
       message: `${stockAlerts.length}개 SKU — 30일 내 품절 예상 또는 재고 50 미만`,
@@ -141,6 +205,7 @@ async function buildDashboardData(): Promise<DashboardData> {
   }
   if (vipInactive.length > 0) {
     alerts.push({
+      id: "vip_inactive",
       level: "info",
       title: "VIP 이탈 위험",
       message: `180일+ 미주문 VIP ${vipInactive.length}명 — 관리 필요`,
@@ -159,6 +224,7 @@ async function buildDashboardData(): Promise<DashboardData> {
 
   if (newWatchlist.length > 0) {
     alerts.push({
+      id: "new_customer",
       level: "warning",
       title: "신규 고객 관리 필요",
       message: `미주문·재구매 대기 ${newWatchlist.length}명 — 온보딩·이탈 방지 연락 필요`,
@@ -195,6 +261,14 @@ async function buildDashboardData(): Promise<DashboardData> {
     })),
     categoryMargin: row.category_margin ?? [],
     monthlyRevenue: row.monthly_revenue ?? [],
+    monthlyCustomerJoins: row.monthly_customer_joins ?? [],
+    forecasts: buildDashboardForecasts({
+      monthlyRevenue: row.monthly_revenue ?? [],
+      monthlyCustomerJoins: row.monthly_customer_joins ?? [],
+      referenceMonth: row.reference_month,
+      currentMonthRevenue: thisMonth,
+      customerCount: row.customer_count,
+    }),
     paymentMix: (row.payment_mix ?? []).map((item) => ({
       method: paymentName.get(item.method) ?? item.method,
       revenue: item.revenue,
@@ -206,6 +280,7 @@ async function buildDashboardData(): Promise<DashboardData> {
     stockAlerts,
     vipInactive,
     staleOrders,
+    orderPipeline: { stats: pipelineStats, overdueOrders: pipelineOverdue },
     newCustomerMonitoring: {
       total90d: newTotal,
       noOrder: newNoOrder,
@@ -220,6 +295,6 @@ async function buildDashboardData(): Promise<DashboardData> {
 
 export const getDashboardData = unstable_cache(
   buildDashboardData,
-  ["dashboard-v4"],
+  ["dashboard-v7"],
   { revalidate: 60 },
 );

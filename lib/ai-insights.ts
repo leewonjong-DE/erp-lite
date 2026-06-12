@@ -43,6 +43,7 @@ export function buildInsightsContext(data: DashboardData): string {
         lowStockSku: kpis.lowStockCount,
       },
       alerts: data.alerts,
+      forecasts: data.forecasts,
       recentMonthlyTrend: recentMonths,
       statusPipeline: data.statusCounts,
       topChannels: data.channelRevenue.slice(0, 4),
@@ -83,24 +84,23 @@ function generateRuleBasedInsights(data: DashboardData): AiInsightsResult {
     topicId: "active_customers",
   });
 
-  if (kpis.pendingOrderCount > 0) {
+  const pipelineOverdue = data.orderPipeline.stats.reduce((s, p) => s + p.overdue, 0);
+  if (pipelineOverdue > 0) {
+    const parts = data.orderPipeline.stats
+      .filter((p) => p.overdue > 0)
+      .map((p) => `${p.status} ${p.overdue}건`);
     risks.push({
-      text: `처리 대기 주문 ${kpis.pendingOrderCount}건 (${formatKrwShort(kpis.pendingOrderAmount)})`,
-      topicId: "pending_orders",
+      text: `상태별 기준 초과 지연 ${pipelineOverdue}건 (${parts.join(", ")})`,
+      topicId: "order_pipeline",
     });
     actions.push({
-      text: "미완료 주문 출고·배송 처리 우선 검토",
-      topicId: "pending_orders",
+      text: "주문접수·결제완료·배송중 단계별 지연 건 우선 처리",
+      topicId: "order_pipeline",
     });
-  }
-  if (data.staleOrders.length > 0) {
-    risks.push({
-      text: `7일+ 미처리 주문 ${data.staleOrders.length}건`,
-      topicId: "stale_orders",
-    });
-    actions.push({
-      text: "장기 '주문접수' 건 CS·물류팀 즉시 확인",
-      topicId: "stale_orders",
+  } else if (kpis.pendingOrderCount > 0) {
+    highlights.push({
+      text: `처리 대기 ${kpis.pendingOrderCount}건 — 현재 기준 내`,
+      topicId: "order_pipeline",
     });
   }
   if (kpis.lowStockCount > 0) {
@@ -150,6 +150,25 @@ function generateRuleBasedInsights(data: DashboardData): AiInsightsResult {
       topicId: "new_customer_repeat",
     });
   }
+
+  const fc = data.forecasts;
+  highlights.push({
+    text:
+      `${fc.revenue.targetMonth} 예상 매출 ${formatKrwShort(fc.revenue.predicted)}` +
+      (fc.revenue.changePct !== null
+        ? ` (${fc.revenue.changePct > 0 ? "+" : ""}${fc.revenue.changePct}%)`
+        : ""),
+    topicId: "revenue_forecast",
+  });
+  highlights.push({
+    text:
+      `${fc.newCustomers.targetMonth} 신규 가입 예상 ${fc.newCustomers.predicted}명` +
+      (fc.newCustomers.changePct !== null
+        ? ` (${fc.newCustomers.changePct > 0 ? "+" : ""}${fc.newCustomers.changePct}%)`
+        : ""),
+    topicId: "customer_forecast",
+  });
+
   if (kpis.cancelReturnRate > 10) {
     risks.push({
       text: `취소·반품율 ${kpis.cancelReturnRate}% — 업계 평균 대비 높을 수 있음`,
@@ -204,9 +223,9 @@ async function generateGeminiInsights(context: string): Promise<AiInsightsResult
 - 각 배열 항목은 1문장, 80자 이내 권장
 - 각 항목에 topicId를 반드시 지정 (근거 데이터 연결용). 아래 목록에서만 선택:
   monthly_revenue, total_revenue_margin, avg_order_value, active_customers,
-  pending_orders, stale_orders, low_stock, vip_inactive,
+  order_pipeline, low_stock, vip_inactive,
   new_customer_no_order, new_customer_one_order, new_customer_repeat,
-  cancel_return, top_channel
+  cancel_return, top_channel, revenue_forecast, customer_forecast
 
 응답 JSON 스키마:
 {

@@ -117,36 +117,37 @@ export function buildEvidenceCatalog(data: DashboardData): Record<string, Insigh
       source: "customers · sales_orders (최근 90일 주문)",
     },
 
-    pending_orders: {
-      topicId: "pending_orders",
-      title: "미처리 주문",
-      reasoning: `주문접수·결제완료·배송중 상태 주문 ${kpis.pendingOrderCount.toLocaleString()}건, 합계 ${formatKrwShort(kpis.pendingOrderAmount)}이 처리 대기 중입니다.`,
+    order_pipeline: {
+      topicId: "order_pipeline",
+      title: "주문 파이프라인 · 상태별 지연",
+      reasoning:
+        `처리 대기 ${kpis.pendingOrderCount.toLocaleString()}건(${formatKrwShort(kpis.pendingOrderAmount)}) 중 ` +
+        `상태별 기준을 초과한 지연 ${data.orderPipeline.stats.reduce((s, p) => s + p.overdue, 0).toLocaleString()}건입니다. ` +
+        "주문접수·결제완료·배송중마다 지연 기준이 다릅니다.",
       metrics: [
-        { label: "미처리 건수", value: `${kpis.pendingOrderCount.toLocaleString()}건` },
-        { label: "미처리 금액", value: formatKrw(kpis.pendingOrderAmount) },
-      ],
-      details: data.statusCounts
-        .filter((s) => ["주문접수", "결제완료", "배송중"].includes(s.status))
-        .map((s) => `${s.status}: ${s.count.toLocaleString()}건 · ${formatKrwShort(s.amount)}`),
-      source: "sales_orders · status_code 파이프라인",
-    },
-
-    stale_orders: {
-      topicId: "stale_orders",
-      title: "장기 미처리 주문 (7일+)",
-      reasoning: `'주문접수' 상태로 7일 이상 경과한 주문 ${data.staleOrders.length}건입니다.`,
-      metrics: [
-        { label: "장기 미처리", value: `${data.staleOrders.length}건` },
+        { label: "파이프라인 전체", value: `${kpis.pendingOrderCount.toLocaleString()}건` },
         {
-          label: "합계 금액",
-          value: formatKrw(data.staleOrders.reduce((s, o) => s + o.amount, 0)),
+          label: "기준 초과(지연)",
+          value: `${data.orderPipeline.stats.reduce((s, p) => s + p.overdue, 0).toLocaleString()}건`,
         },
+        ...data.orderPipeline.stats.map((p) => ({
+          label: p.status,
+          value: `${p.total.toLocaleString()}건 · 지연 ${p.overdue}건`,
+          hint:
+            p.status === "주문접수"
+              ? "접수 후 3일+ 지연 · 7일+ 장기"
+              : p.status === "결제완료"
+                ? "접수 후 4일+ 출고 지연"
+                : "접수 후 6일+ 배송 지연 추정",
+        })),
       ],
-      details: data.staleOrders.slice(0, 5).map(
+      details: data.orderPipeline.overdueOrders.slice(0, 8).map(
         (o) =>
-          `#${o.orderNo} ${o.customerName} · ${o.daysPending}일 경과 · ${formatKrwShort(o.amount)}`,
+          `[${o.status}] #${o.orderNo} ${o.customerName} · 접수 후 ${o.daysSinceOrder}일` +
+          (o.overdueDays > 0 ? ` (+${o.overdueDays}일)` : "") +
+          ` · ${formatKrwShort(o.amount)}`,
       ),
-      source: "sales_orders · order_date + status_code='주문접수'",
+      source: "sales_orders · 상태별 SLA (접수일 기준)",
     },
 
     low_stock: {
@@ -254,12 +255,93 @@ export function buildEvidenceCatalog(data: DashboardData): Record<string, Insigh
       ],
       source: "sales_orders · total_amount_krw",
     },
+
+    revenue_forecast: {
+      topicId: "revenue_forecast",
+      title: "다음 달 매출 예측",
+      reasoning:
+        `${data.forecasts.revenue.targetMonth} 예상 매출은 ${formatKrw(data.forecasts.revenue.predicted)}입니다. ` +
+        `${data.forecasts.revenue.compareLabel} 대비 ` +
+        (data.forecasts.revenue.changePct !== null
+          ? `${data.forecasts.revenue.changePct > 0 ? "+" : ""}${data.forecasts.revenue.changePct}%`
+          : "비교 불가") +
+        `입니다. ${data.forecasts.revenue.basis}`,
+      metrics: [
+        {
+          label: "예상 매출",
+          value: formatKrw(data.forecasts.revenue.predicted),
+          hint: data.forecasts.revenue.targetMonth,
+        },
+        {
+          label: "기준 월 매출",
+          value: formatKrw(kpis.monthRevenue),
+          hint: kpis.referenceMonth,
+        },
+        {
+          label: "예상 증감",
+          value:
+            data.forecasts.revenue.changePct !== null
+              ? `${data.forecasts.revenue.changePct > 0 ? "+" : ""}${data.forecasts.revenue.changePct}%`
+              : "-",
+        },
+      ],
+      details: data.monthlyRevenue.slice(-6).map(
+        (m) => `${m.month}: ${formatKrwShort(m.revenue)} · 주문 ${m.orders.toLocaleString()}건`,
+      ),
+      source: "monthly_revenue · 선형회귀 + 이동평균",
+    },
+
+    customer_forecast: {
+      topicId: "customer_forecast",
+      title: "다음 달 고객 증감 예측",
+      reasoning:
+        `${data.forecasts.newCustomers.targetMonth} 신규 가입 예상 ${data.forecasts.newCustomers.predicted.toLocaleString()}명, ` +
+        `전체 고객 ${data.forecasts.totalCustomers.predicted.toLocaleString()}명으로 전망됩니다. ` +
+        data.forecasts.newCustomers.basis,
+      metrics: [
+        {
+          label: "예상 신규 가입",
+          value: `${data.forecasts.newCustomers.predicted.toLocaleString()}명`,
+          hint: data.forecasts.newCustomers.targetMonth,
+        },
+        {
+          label: "현재 전체 고객",
+          value: `${kpis.customerCount.toLocaleString()}명`,
+        },
+        {
+          label: "예상 전체 고객",
+          value: `${data.forecasts.totalCustomers.predicted.toLocaleString()}명`,
+        },
+        {
+          label: "신규 가입 증감",
+          value:
+            data.forecasts.newCustomers.changePct !== null
+              ? `${data.forecasts.newCustomers.changePct > 0 ? "+" : ""}${data.forecasts.newCustomers.changePct}%`
+              : "-",
+          hint: `${data.forecasts.newCustomers.compareLabel} 대비`,
+        },
+      ],
+      details: data.monthlyCustomerJoins.slice(-6).map(
+        (m) => `${m.month}: 신규 가입 ${m.joins.toLocaleString()}명`,
+      ),
+      source: "customers · join_date 월별 집계",
+    },
   };
 
   return catalog;
 }
 
 const TOPIC_MATCHERS: Array<{ topicId: string; patterns: RegExp[]; priority: number }> = [
+  {
+    topicId: "revenue_forecast",
+    priority: 95,
+    patterns: [/다음\s*달.*매출|매출.*예상|매출.*예측|매출.*전망/i],
+  },
+  {
+    topicId: "customer_forecast",
+    priority: 95,
+    patterns: [/다음\s*달.*고객|고객.*증가|고객.*감소|신규.*예상|가입.*예측/i],
+  },
   {
     topicId: "vip_inactive",
     priority: 100,
@@ -285,19 +367,17 @@ const TOPIC_MATCHERS: Array<{ topicId: string; patterns: RegExp[]; priority: num
     patterns: [/재구매율|신규 고객.*재구매/i],
   },
   {
-    topicId: "stale_orders",
-    priority: 80,
-    patterns: [/7일.*미처리|장기.*미처리|미처리 주문.*일/i],
+    topicId: "order_pipeline",
+    priority: 85,
+    patterns: [
+      /7일.*미처리|장기.*미처리|미처리 주문.*일/i,
+      /미처리|처리 대기|밀린|적체|출고.*지연|배송.*지연|처리 지연/i,
+    ],
   },
   {
     topicId: "monthly_revenue",
     priority: 70,
     patterns: [/매출.*전월|전월.*매출|매출.*감소|매출.*증가|주문 건수|주문.*줄|주문.*감소|월 매출/i],
-  },
-  {
-    topicId: "pending_orders",
-    priority: 70,
-    patterns: [/미처리|처리 대기|밀린|적체|출고.*지연/i],
   },
   {
     topicId: "low_stock",
@@ -331,7 +411,11 @@ const TOPIC_MATCHERS: Array<{ topicId: string; patterns: RegExp[]; priority: num
   },
 ];
 
-const VALID_TOPIC_IDS = new Set(TOPIC_MATCHERS.map((m) => m.topicId));
+const VALID_TOPIC_IDS = new Set([
+  ...TOPIC_MATCHERS.map((m) => m.topicId),
+  "revenue_forecast",
+  "customer_forecast",
+]);
 
 export function inferTopicId(text: string): string | null {
   let best: { topicId: string; priority: number } | null = null;

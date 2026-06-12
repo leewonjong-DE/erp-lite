@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import type { ParsedSearchFilters } from "@/lib/ai-search";
 import {
+  buildForecastDirectAnswer,
+  isForecastQuery,
+  parseForecastFocus,
+} from "@/lib/forecast";
+import { getDashboardData } from "@/lib/get-dashboard-data";
+import {
   parseAnalyticsQuery,
   runIntentAnalytics,
   type AnalyticsSpec,
@@ -49,15 +55,17 @@ const GUIDED_INTENTS: Array<{
     }),
   },
   {
-    id: "forecast",
-    test: (q) => /(예측|전망|예상|내년|다음\s*달|앞으로)/i.test(q),
+    id: "forecast_longterm",
+    test: (q) =>
+      /(예측|전망|예상|앞으로)/i.test(q) &&
+      /(내년|분기|상반기|하반기|202[7-9]|2030)/i.test(q),
     build: () => ({
-      id: "forecast",
-      summary: "예측·전망 질문",
+      id: "forecast_longterm",
+      summary: "장기 예측",
       directAnswer:
-        "미래 매출·수요 예측은 아직 검색에서 지원하지 않습니다. " +
-        "현재 데이터 기준으로는 '가장 많이 팔린 상품', '매출 상위 고객' 같은 순위 질문을 이용해 주세요.",
-      suggestions: ["가장 많이 팔린 상품", "매출이 가장 많은 고객", "마진율이 가장 높은 상품"],
+        "내년·분기 단위 예측은 아직 지원하지 않습니다. " +
+        "다음 달 매출·고객 가입 예측은 검색하거나 대시보드 '전망 (예측)' 섹션에서 확인할 수 있습니다.",
+      suggestions: ["다음 달 예상 매출", "다음 달 고객 증가 예측", "이번 달 매출"],
     }),
   },
   {
@@ -125,6 +133,26 @@ export async function tryResolveSearchIntent(
 ): Promise<IntentAnalyticsResult | null> {
   const trimmed = query.trim();
   if (!trimmed) return null;
+
+  if (isForecastQuery(trimmed)) {
+    const data = await getDashboardData();
+    const focus = parseForecastFocus(trimmed);
+    const { summary, directAnswer } = buildForecastDirectAnswer(data.forecasts, focus);
+    const filters: ParsedSearchFilters = {
+      entities: [],
+      summary,
+    };
+    return {
+      mode: "analytics",
+      summary,
+      directAnswer,
+      customers: { data: [], total: 0 },
+      products: { data: [], total: 0 },
+      orders: { data: [], total: 0 },
+      filters,
+      suggestions: ["다음 달 예상 매출", "다음 달 고객 증가 예측", "마진율이 가장 높은 상품"],
+    };
+  }
 
   const analyticsSpec = parseAnalyticsQuery(trimmed, {
     brands: masters.brands,
@@ -282,11 +310,11 @@ function buildSuggestionsFromQuery(query: string, filters: ParsedSearchFilters):
 
 export const EXAMPLE_QUERIES = [
   "마진율이 가장 높은 상품",
-  "가장 많이 팔린 상품",
+  "다음 달 예상 매출",
+  "다음 달 고객 증가 예측",
   "매출이 가장 많은 고객",
   "미처리 주문 몇 건",
   "재고 부족 삼성 노트북",
-  "이번 달 매출",
 ];
 
 export type { AnalyticsSpec };

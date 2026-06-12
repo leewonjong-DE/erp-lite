@@ -138,7 +138,7 @@ async function generateGeminiInsights(context: string): Promise<AiInsightsResult
     throw new Error("API_KEY_MISSING");
   }
 
-  const model = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+  const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
   const prompt = `당신은 IT B2B 유통 회사의 경영·운영 분석가입니다.
 아래 ERP 대시보드 JSON을 바탕으로 경영진 브리핑을 작성하세요.
 

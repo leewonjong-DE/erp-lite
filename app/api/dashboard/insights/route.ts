@@ -8,7 +8,7 @@ const getCachedInsights = unstable_cache(
     const data = await getDashboardData();
     return generateInsights(data);
   },
-  ["dashboard-insights-v5"],
+  ["dashboard-insights-v7"],
   { revalidate: 300 },
 );
 

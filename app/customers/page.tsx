@@ -1,7 +1,13 @@
 "use client";
 
+import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import Pagination from "@/components/Pagination";
+import SearchInput from "@/components/SearchInput";
+import StatusBadge from "@/components/StatusBadge";
+import { TableSkeleton } from "@/components/Skeleton";
 import { formatDate } from "@/lib/format";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { useCallback, useEffect, useState } from "react";
 
 type Customer = {
@@ -26,6 +32,9 @@ const emptyForm = {
   tier: "일반",
 };
 
+const inputClass =
+  "w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm transition focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-200";
+
 export default function CustomersPage() {
   const [data, setData] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
@@ -36,12 +45,17 @@ export default function CustomersPage() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const debouncedSearch = useDebouncedValue(search);
 
   const load = useCallback(async () => {
+    setLoading(true);
     const params = new URLSearchParams({
       page: String(page),
       limit: "15",
-      ...(search ? { search } : {}),
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
       ...(customerType ? { customerType } : {}),
       ...(tier ? { tier } : {}),
     });
@@ -49,7 +63,8 @@ export default function CustomersPage() {
     const json = await res.json();
     setData(json.data);
     setTotal(json.total);
-  }, [page, search, customerType, tier]);
+    setLoading(false);
+  }, [page, debouncedSearch, customerType, tier]);
 
   useEffect(() => {
     load();
@@ -58,10 +73,8 @@ export default function CustomersPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setMessage("");
-    const payload = {
-      ...form,
-      customerId: Number(form.customerId),
-    };
+    setSaving(true);
+    const payload = { ...form, customerId: Number(form.customerId) };
     const url = editingId ? `/api/customers/${editingId}` : "/api/customers";
     const method = editingId ? "PUT" : "POST";
     const res = await fetch(url, {
@@ -70,6 +83,7 @@ export default function CustomersPage() {
       body: JSON.stringify(payload),
     });
     const json = await res.json();
+    setSaving(false);
     if (!res.ok) {
       setMessage(json.error ?? "저장에 실패했습니다.");
       return;
@@ -85,14 +99,16 @@ export default function CustomersPage() {
     const res = await fetch(`/api/customers/${id}`, { method: "DELETE" });
     const json = await res.json();
     if (!res.ok) {
-      alert(json.error);
+      setMessage(json.error ?? "삭제에 실패했습니다.");
       return;
     }
+    setMessage("고객이 삭제되었습니다.");
     load();
   }
 
   function startEdit(customer: Customer) {
     setEditingId(customer.customerId);
+    setMessage("");
     setForm({
       customerId: String(customer.customerId),
       customerName: customer.customerName,
@@ -111,18 +127,17 @@ export default function CustomersPage() {
     <div>
       <PageHeader title="고객 관리" description="고객 정보를 조회·등록·수정합니다." />
 
-      <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-4">
-        <input
-          className="rounded-lg border border-zinc-300 px-3 py-2"
-          placeholder="이름/도시 검색"
+      <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-3">
+        <SearchInput
           value={search}
-          onChange={(e) => {
+          onChange={(v) => {
             setPage(1);
-            setSearch(e.target.value);
+            setSearch(v);
           }}
+          placeholder="이름/도시 검색"
         />
         <select
-          className="rounded-lg border border-zinc-300 px-3 py-2"
+          className={inputClass}
           value={customerType}
           onChange={(e) => {
             setPage(1);
@@ -135,7 +150,7 @@ export default function CustomersPage() {
           <option value="대리점">대리점</option>
         </select>
         <select
-          className="rounded-lg border border-zinc-300 px-3 py-2"
+          className={inputClass}
           value={tier}
           onChange={(e) => {
             setPage(1);
@@ -147,79 +162,82 @@ export default function CustomersPage() {
           <option value="VIP">VIP</option>
           <option value="휴면">휴면</option>
         </select>
-        <p className="self-center text-sm text-zinc-500">총 {total.toLocaleString()}명</p>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-        <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
-          <table className="min-w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-zinc-500">
-              <tr>
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">이름</th>
-                <th className="px-4 py-3">유형</th>
-                <th className="px-4 py-3">도시</th>
-                <th className="px-4 py-3">등급</th>
-                <th className="px-4 py-3">가입일</th>
-                <th className="px-4 py-3">액션</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((customer) => (
-                <tr key={customer.customerId} className="border-t border-zinc-100">
-                  <td className="px-4 py-3">{customer.customerId}</td>
-                  <td className="px-4 py-3">{customer.customerName}</td>
-                  <td className="px-4 py-3">{customer.customerType}</td>
-                  <td className="px-4 py-3">{customer.city}</td>
-                  <td className="px-4 py-3">{customer.tier}</td>
-                  <td className="px-4 py-3">{formatDate(customer.joinDate)}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      className="mr-2 text-blue-600 hover:underline"
-                      onClick={() => startEdit(customer)}
-                    >
-                      수정
-                    </button>
-                    <button
-                      className="text-red-600 hover:underline"
-                      onClick={() => handleDelete(customer.customerId)}
-                    >
-                      삭제
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-3">
-            <button
-              className="rounded-lg border px-3 py-1 disabled:opacity-40"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              이전
-            </button>
-            <span className="text-sm text-zinc-500">
-              {page} / {totalPages}
-            </span>
-            <button
-              className="rounded-lg border px-3 py-1 disabled:opacity-40"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              다음
-            </button>
+        {loading ? (
+          <TableSkeleton rows={8} cols={6} />
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+            {data.length === 0 ? (
+              <EmptyState
+                title="검색 결과가 없습니다"
+                description="검색어나 필터 조건을 변경해 보세요."
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-zinc-50 text-left text-zinc-500">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">ID</th>
+                      <th className="px-4 py-3 font-medium">이름</th>
+                      <th className="px-4 py-3 font-medium">유형</th>
+                      <th className="px-4 py-3 font-medium">도시</th>
+                      <th className="px-4 py-3 font-medium">등급</th>
+                      <th className="px-4 py-3 font-medium">가입일</th>
+                      <th className="px-4 py-3 font-medium">액션</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.map((customer) => (
+                      <tr
+                        key={customer.customerId}
+                        className="border-t border-zinc-100 transition hover:bg-zinc-50"
+                      >
+                        <td className="px-4 py-3 text-zinc-500">{customer.customerId}</td>
+                        <td className="px-4 py-3 font-medium">{customer.customerName}</td>
+                        <td className="px-4 py-3">
+                          <StatusBadge label={customer.customerType} />
+                        </td>
+                        <td className="px-4 py-3">{customer.city}</td>
+                        <td className="px-4 py-3">
+                          <StatusBadge label={customer.tier} />
+                        </td>
+                        <td className="px-4 py-3">{formatDate(customer.joinDate)}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            className="mr-3 text-blue-600 hover:underline"
+                            onClick={() => startEdit(customer)}
+                          >
+                            수정
+                          </button>
+                          <button
+                            type="button"
+                            className="text-red-600 hover:underline"
+                            onClick={() => handleDelete(customer.customerId)}
+                          >
+                            삭제
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
           </div>
-        </div>
+        )}
 
         <form
           onSubmit={handleSubmit}
-          className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm"
+          className="h-fit rounded-xl border border-zinc-200 bg-white p-5 shadow-sm xl:sticky xl:top-8"
         >
           <h3 className="mb-4 font-semibold">{editingId ? "고객 수정" : "고객 추가"}</h3>
           <div className="grid gap-3">
             <input
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={inputClass}
               placeholder="고객 ID"
               value={form.customerId}
               disabled={!!editingId}
@@ -227,14 +245,14 @@ export default function CustomersPage() {
               required
             />
             <input
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={inputClass}
               placeholder="고객명"
               value={form.customerName}
               onChange={(e) => setForm({ ...form, customerName: e.target.value })}
               required
             />
             <select
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={inputClass}
               value={form.customerType}
               onChange={(e) => setForm({ ...form, customerType: e.target.value })}
             >
@@ -243,21 +261,21 @@ export default function CustomersPage() {
               <option value="대리점">대리점</option>
             </select>
             <input
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={inputClass}
               placeholder="도시"
               value={form.city}
               onChange={(e) => setForm({ ...form, city: e.target.value })}
               required
             />
             <input
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={inputClass}
               placeholder="전화"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               required
             />
             <input
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={inputClass}
               placeholder="이메일"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -265,13 +283,13 @@ export default function CustomersPage() {
             />
             <input
               type="date"
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={inputClass}
               value={form.joinDate}
               onChange={(e) => setForm({ ...form, joinDate: e.target.value })}
               required
             />
             <select
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={inputClass}
               value={form.tier}
               onChange={(e) => setForm({ ...form, tier: e.target.value })}
             >
@@ -280,18 +298,33 @@ export default function CustomersPage() {
               <option value="휴면">휴면</option>
             </select>
           </div>
-          {message ? <p className="mt-3 text-sm text-green-600">{message}</p> : null}
+          {message ? (
+            <p
+              className={`mt-3 text-sm ${
+                message.includes("실패") || message.includes("삭제에")
+                  ? "text-red-600"
+                  : "text-emerald-600"
+              }`}
+            >
+              {message}
+            </p>
+          ) : null}
           <div className="mt-4 flex gap-2">
-            <button className="rounded-lg bg-zinc-900 px-4 py-2 text-white" type="submit">
-              {editingId ? "수정 저장" : "추가"}
+            <button
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm text-white transition hover:bg-zinc-800 disabled:opacity-50"
+              type="submit"
+              disabled={saving}
+            >
+              {saving ? "저장 중…" : editingId ? "수정 저장" : "추가"}
             </button>
             {editingId ? (
               <button
                 type="button"
-                className="rounded-lg border px-4 py-2"
+                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm hover:bg-zinc-50"
                 onClick={() => {
                   setEditingId(null);
                   setForm(emptyForm);
+                  setMessage("");
                 }}
               >
                 취소

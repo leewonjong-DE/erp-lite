@@ -1,6 +1,10 @@
 "use client";
 
+import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import Pagination from "@/components/Pagination";
+import StatusBadge from "@/components/StatusBadge";
+import { TableSkeleton } from "@/components/Skeleton";
 import { formatDate, formatKrw } from "@/lib/format";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -17,14 +21,19 @@ type Order = {
   _count: { items: number };
 };
 
+const inputClass =
+  "w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm transition focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-200";
+
 export default function OrdersPage() {
   const [data, setData] = useState<Order[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [channel, setChannel] = useState("");
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    setLoading(true);
     const params = new URLSearchParams({
       page: String(page),
       limit: "15",
@@ -35,6 +44,7 @@ export default function OrdersPage() {
     const json = await res.json();
     setData(json.data);
     setTotal(json.total);
+    setLoading(false);
   }, [page, status, channel]);
 
   useEffect(() => {
@@ -51,16 +61,16 @@ export default function OrdersPage() {
         action={
           <Link
             href="/orders/new"
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm text-white"
+            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm text-white transition hover:bg-zinc-800"
           >
             + 주문 등록
           </Link>
         }
       />
 
-      <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-3">
+      <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-2">
         <select
-          className="rounded-lg border border-zinc-300 px-3 py-2"
+          className={inputClass}
           value={status}
           onChange={(e) => {
             setPage(1);
@@ -76,7 +86,7 @@ export default function OrdersPage() {
           <option value="반품">반품</option>
         </select>
         <select
-          className="rounded-lg border border-zinc-300 px-3 py-2"
+          className={inputClass}
           value={channel}
           onChange={(e) => {
             setPage(1);
@@ -89,66 +99,65 @@ export default function OrdersPage() {
           <option value="전화">전화</option>
           <option value="영업사원">영업사원</option>
         </select>
-        <p className="self-center text-sm text-zinc-500">총 {total.toLocaleString()}건</p>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <table className="min-w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-zinc-500">
-            <tr>
-              <th className="px-4 py-3">주문번호</th>
-              <th className="px-4 py-3">고객</th>
-              <th className="px-4 py-3">주문일</th>
-              <th className="px-4 py-3">채널</th>
-              <th className="px-4 py-3">상태</th>
-              <th className="px-4 py-3">품목</th>
-              <th className="px-4 py-3">금액</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((order) => (
-              <tr key={order.orderNo} className="border-t border-zinc-100 hover:bg-zinc-50">
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/orders/${order.orderNo}`}
-                    className="font-medium text-blue-600 hover:underline"
-                  >
-                    {order.orderNo}
-                  </Link>
-                </td>
-                <td className="px-4 py-3">
-                  <div>{order.customer.customerName}</div>
-                  <div className="text-xs text-zinc-400">{order.customer.tier}</div>
-                </td>
-                <td className="px-4 py-3">{formatDate(order.orderDate)}</td>
-                <td className="px-4 py-3">{order.channel}</td>
-                <td className="px-4 py-3">{order.status}</td>
-                <td className="px-4 py-3">{order._count.items}개</td>
-                <td className="px-4 py-3">{formatKrw(order.totalAmountKrw)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-3">
-          <button
-            className="rounded-lg border px-3 py-1 disabled:opacity-40"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            이전
-          </button>
-          <span className="text-sm text-zinc-500">
-            {page} / {totalPages}
-          </span>
-          <button
-            className="rounded-lg border px-3 py-1 disabled:opacity-40"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            다음
-          </button>
+      {loading ? (
+        <TableSkeleton rows={10} cols={7} />
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+          {data.length === 0 ? (
+            <EmptyState
+              title="주문이 없습니다"
+              description="필터 조건을 변경하거나 새 주문을 등록해 보세요."
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-zinc-50 text-left text-zinc-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">주문번호</th>
+                    <th className="px-4 py-3 font-medium">고객</th>
+                    <th className="px-4 py-3 font-medium">주문일</th>
+                    <th className="px-4 py-3 font-medium">채널</th>
+                    <th className="px-4 py-3 font-medium">상태</th>
+                    <th className="px-4 py-3 font-medium">품목</th>
+                    <th className="px-4 py-3 font-medium">금액</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((order) => (
+                    <tr
+                      key={order.orderNo}
+                      className="border-t border-zinc-100 transition hover:bg-zinc-50"
+                    >
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/orders/${order.orderNo}`}
+                          className="font-medium text-blue-600 hover:underline"
+                        >
+                          {order.orderNo}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{order.customer.customerName}</div>
+                        <StatusBadge label={order.customer.tier} />
+                      </td>
+                      <td className="px-4 py-3">{formatDate(order.orderDate)}</td>
+                      <td className="px-4 py-3">{order.channel}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge label={order.status} />
+                      </td>
+                      <td className="px-4 py-3">{order._count.items}개</td>
+                      <td className="px-4 py-3 font-medium">{formatKrw(order.totalAmountKrw)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
         </div>
-      </div>
+      )}
     </div>
   );
 }

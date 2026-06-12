@@ -7,7 +7,7 @@ type KpiCardProps = {
 
 export default function KpiCard({ label, value, hint, trend }: KpiCardProps) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:border-zinc-300 hover:shadow">
       <p className="text-sm text-zinc-500">{label}</p>
       <p className="mt-2 text-2xl font-semibold text-zinc-900">{value}</p>
       {trend ? (

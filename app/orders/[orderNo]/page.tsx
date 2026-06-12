@@ -1,6 +1,8 @@
 "use client";
 
 import PageHeader from "@/components/PageHeader";
+import StatusBadge from "@/components/StatusBadge";
+import { TableSkeleton } from "@/components/Skeleton";
 import { formatDate, formatKrw } from "@/lib/format";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -248,7 +250,11 @@ export default function OrderDetailPage() {
   }
 
   if (!order) {
-    return <p className="text-zinc-500">주문 정보 로딩 중...</p>;
+    return (
+      <div>
+        <TableSkeleton rows={4} cols={5} />
+      </div>
+    );
   }
 
   return (
@@ -257,14 +263,17 @@ export default function OrderDetailPage() {
         title={`주문 #${order.orderNo}`}
         description={`${order.customer.customerName} · ${formatDate(order.orderDate)}`}
         action={
-          <Link href="/orders" className="rounded-lg border px-4 py-2 text-sm">
+          <Link
+            href="/orders"
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm transition hover:bg-zinc-50"
+          >
             목록으로
           </Link>
         }
       />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-4">
-        <InfoCard label="상태" value={order.status} />
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+        <InfoCard label="상태" value={<StatusBadge label={order.status} />} />
         <InfoCard label="채널" value={order.channel} />
         <InfoCard label="결제" value={order.paymentMethod} />
         <InfoCard label="총액" value={formatKrw(order.totalAmountKrw)} />
@@ -273,13 +282,16 @@ export default function OrderDetailPage() {
       <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-5">
         <p className="text-sm text-zinc-500">고객 정보</p>
         <p className="mt-1 font-medium">
-          {order.customer.customerName} ({order.customer.tier}) · {order.customer.city}
+          {order.customer.customerName}{" "}
+          <StatusBadge label={order.customer.tier} /> · {order.customer.city}
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <p className="mt-4 text-sm text-zinc-500">상태 변경</p>
+        <div className="mt-2 flex flex-wrap gap-2">
           {statuses.map((status) => (
             <button
               key={status}
-              className={`rounded-lg px-3 py-1 text-sm ${
+              type="button"
+              className={`rounded-lg px-3 py-1.5 text-sm transition ${
                 order.status === status
                   ? "bg-zinc-900 text-white"
                   : "border border-zinc-300 hover:bg-zinc-50"
@@ -296,16 +308,16 @@ export default function OrderDetailPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-zinc-50 text-left text-zinc-500">
             <tr>
-              <th className="px-4 py-3">상품</th>
-              <th className="px-4 py-3">수량</th>
-              <th className="px-4 py-3">단가</th>
-              <th className="px-4 py-3">할인</th>
-              <th className="px-4 py-3">금액</th>
+              <th className="px-4 py-3 font-medium">상품</th>
+              <th className="px-4 py-3 font-medium">수량</th>
+              <th className="px-4 py-3 font-medium">단가</th>
+              <th className="px-4 py-3 font-medium">할인</th>
+              <th className="px-4 py-3 font-medium">금액</th>
             </tr>
           </thead>
           <tbody>
             {order.items.map((item) => (
-              <tr key={item.orderItemId} className="border-t border-zinc-100">
+              <tr key={item.orderItemId} className="border-t border-zinc-100 hover:bg-zinc-50">
                 <td className="px-4 py-3">
                   <div className="font-medium">{item.product.productName}</div>
                   <div className="text-xs text-zinc-400">
@@ -325,11 +337,11 @@ export default function OrderDetailPage() {
   );
 }
 
-function InfoCard({ label, value }: { label: string; value: string }) {
+function InfoCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4">
       <p className="text-sm text-zinc-500">{label}</p>
-      <p className="mt-1 font-semibold">{value}</p>
+      <div className="mt-1 font-semibold">{value}</div>
     </div>
   );
 }

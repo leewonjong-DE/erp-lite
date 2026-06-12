@@ -1,8 +1,14 @@
 "use client";
 
+import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
+import Pagination from "@/components/Pagination";
+import SearchInput from "@/components/SearchInput";
+import StatusBadge from "@/components/StatusBadge";
+import { TableSkeleton } from "@/components/Skeleton";
 import { calcMarginPct, formatKrw } from "@/lib/format";
-import { useCallback, useEffect, useState } from "react";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Product = {
   productId: number;
@@ -26,6 +32,9 @@ const emptyForm = {
   status: "판매중",
 };
 
+const inputClass =
+  "w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm transition focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-200";
+
 export default function ProductsPage() {
   const [data, setData] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
@@ -35,20 +44,32 @@ export default function ProductsPage() {
   const [lowStock, setLowStock] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [stockDraft, setStockDraft] = useState<Record<number, string>>({});
+  const [savingStock, setSavingStock] = useState<number | null>(null);
+  const stockTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+
+  const debouncedSearch = useDebouncedValue(search);
+  const debouncedCategory = useDebouncedValue(category);
 
   const load = useCallback(async () => {
+    setLoading(true);
     const params = new URLSearchParams({
       page: String(page),
       limit: "15",
-      ...(search ? { search } : {}),
-      ...(category ? { category } : {}),
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      ...(debouncedCategory ? { category: debouncedCategory } : {}),
       ...(lowStock ? { lowStock: "true" } : {}),
     });
     const res = await fetch(`/api/products?${params}`);
     const json = await res.json();
     setData(json.data);
     setTotal(json.total);
-  }, [page, search, category, lowStock]);
+    setStockDraft({});
+    setLoading(false);
+  }, [page, debouncedSearch, debouncedCategory, lowStock]);
 
   useEffect(() => {
     load();
@@ -56,6 +77,8 @@ export default function ProductsPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setSaving(true);
+    setMessage("");
     const payload = {
       ...form,
       productId: Number(form.productId),
@@ -70,13 +93,15 @@ export default function ProductsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    setSaving(false);
     if (!res.ok) {
       const json = await res.json();
-      alert(json.error ?? "저장 실패");
+      setMessage(json.error ?? "저장에 실패했습니다.");
       return;
     }
     setForm(emptyForm);
     setEditingId(null);
+    setMessage(editingId ? "상품이 수정되었습니다." : "상품이 추가되었습니다.");
     load();
   }
 
@@ -85,21 +110,37 @@ export default function ProductsPage() {
     const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
     const json = await res.json();
     if (!res.ok) {
-      alert(json.error);
+      setMessage(json.error ?? "삭제에 실패했습니다.");
       return;
     }
+    setMessage("상품이 삭제되었습니다.");
     load();
   }
 
-  async function updateStock(id: number, stockQty: number) {
-    const product = data.find((p) => p.productId === id);
-    if (!product) return;
-    await fetch(`/api/products/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...product, stockQty }),
-    });
-    load();
+  function scheduleStockSave(product: Product, value: string) {
+    const id = product.productId;
+    setStockDraft((prev) => ({ ...prev, [id]: value }));
+
+    if (stockTimers.current[id]) clearTimeout(stockTimers.current[id]);
+    stockTimers.current[id] = setTimeout(async () => {
+      const stockQty = Number(value);
+      if (Number.isNaN(stockQty) || stockQty < 0) return;
+      setSavingStock(id);
+      await fetch(`/api/products/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...product, stockQty }),
+      });
+      setSavingStock(null);
+      setStockDraft((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setData((prev) =>
+        prev.map((p) => (p.productId === id ? { ...p, stockQty } : p)),
+      );
+    }, 600);
   }
 
   const totalPages = Math.max(1, Math.ceil(total / 15));
@@ -108,18 +149,17 @@ export default function ProductsPage() {
     <div>
       <PageHeader title="상품·재고" description="상품 카탈로그와 재고 수량을 관리합니다." />
 
-      <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-4">
-        <input
-          className="rounded-lg border border-zinc-300 px-3 py-2"
-          placeholder="상품명/브랜드 검색"
+      <div className="mb-6 grid gap-4 rounded-xl border border-zinc-200 bg-white p-5 lg:grid-cols-3">
+        <SearchInput
           value={search}
-          onChange={(e) => {
+          onChange={(v) => {
             setPage(1);
-            setSearch(e.target.value);
+            setSearch(v);
           }}
+          placeholder="상품명/브랜드 검색"
         />
         <input
-          className="rounded-lg border border-zinc-300 px-3 py-2"
+          className={inputClass}
           placeholder="카테고리"
           value={category}
           onChange={(e) => {
@@ -127,7 +167,7 @@ export default function ProductsPage() {
             setCategory(e.target.value);
           }}
         />
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm">
           <input
             type="checkbox"
             checked={lowStock}
@@ -138,100 +178,113 @@ export default function ProductsPage() {
           />
           재고 50개 미만만
         </label>
-        <p className="self-center text-sm text-zinc-500">총 {total.toLocaleString()}개</p>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-        <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
-          <table className="min-w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-zinc-500">
-              <tr>
-                <th className="px-4 py-3">상품</th>
-                <th className="px-4 py-3">카테고리</th>
-                <th className="px-4 py-3">판매가</th>
-                <th className="px-4 py-3">마진</th>
-                <th className="px-4 py-3">재고</th>
-                <th className="px-4 py-3">상태</th>
-                <th className="px-4 py-3">액션</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((product) => (
-                <tr key={product.productId} className="border-t border-zinc-100">
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{product.productName}</div>
-                    <div className="text-xs text-zinc-400">{product.brand}</div>
-                  </td>
-                  <td className="px-4 py-3">{product.category}</td>
-                  <td className="px-4 py-3">{formatKrw(product.unitPriceKrw)}</td>
-                  <td className="px-4 py-3">
-                    {calcMarginPct(product.unitCostKrw, product.unitPriceKrw)}%
-                  </td>
-                  <td className="px-4 py-3">
-                    <input
-                      type="number"
-                      className="w-20 rounded border border-zinc-300 px-2 py-1"
-                      value={product.stockQty}
-                      onChange={(e) =>
-                        updateStock(product.productId, Number(e.target.value))
-                      }
-                    />
-                  </td>
-                  <td className="px-4 py-3">{product.status}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      className="mr-2 text-blue-600 hover:underline"
-                      onClick={() => {
-                        setEditingId(product.productId);
-                        setForm({
-                          productId: String(product.productId),
-                          productName: product.productName,
-                          category: product.category,
-                          brand: product.brand,
-                          unitCostKrw: String(product.unitCostKrw),
-                          unitPriceKrw: String(product.unitPriceKrw),
-                          stockQty: String(product.stockQty),
-                          status: product.status,
-                        });
-                      }}
-                    >
-                      수정
-                    </button>
-                    <button
-                      className="text-red-600 hover:underline"
-                      onClick={() => handleDelete(product.productId)}
-                    >
-                      삭제
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-3">
-            <button
-              className="rounded-lg border px-3 py-1 disabled:opacity-40"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              이전
-            </button>
-            <span className="text-sm text-zinc-500">
-              {page} / {totalPages}
-            </span>
-            <button
-              className="rounded-lg border px-3 py-1 disabled:opacity-40"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              다음
-            </button>
+        {loading ? (
+          <TableSkeleton rows={8} cols={6} />
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+            {data.length === 0 ? (
+              <EmptyState
+                title="검색 결과가 없습니다"
+                description="검색어나 필터 조건을 변경해 보세요."
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-zinc-50 text-left text-zinc-500">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">상품</th>
+                      <th className="px-4 py-3 font-medium">카테고리</th>
+                      <th className="px-4 py-3 font-medium">판매가</th>
+                      <th className="px-4 py-3 font-medium">마진</th>
+                      <th className="px-4 py-3 font-medium">재고</th>
+                      <th className="px-4 py-3 font-medium">상태</th>
+                      <th className="px-4 py-3 font-medium">액션</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.map((product) => {
+                      const stockValue =
+                        stockDraft[product.productId] ?? String(product.stockQty);
+                      const isLow = product.stockQty < 50;
+                      return (
+                        <tr
+                          key={product.productId}
+                          className="border-t border-zinc-100 transition hover:bg-zinc-50"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="font-medium">{product.productName}</div>
+                            <div className="text-xs text-zinc-400">{product.brand}</div>
+                          </td>
+                          <td className="px-4 py-3">{product.category}</td>
+                          <td className="px-4 py-3">{formatKrw(product.unitPriceKrw)}</td>
+                          <td className="px-4 py-3">
+                            {calcMarginPct(product.unitCostKrw, product.unitPriceKrw)}%
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              type="number"
+                              min={0}
+                              className={`w-20 rounded border px-2 py-1 text-sm transition focus:outline-none focus:ring-2 focus:ring-zinc-200 ${
+                                isLow
+                                  ? "border-red-300 bg-red-50 text-red-700"
+                                  : "border-zinc-300"
+                              }`}
+                              value={stockValue}
+                              onChange={(e) => scheduleStockSave(product, e.target.value)}
+                            />
+                            {savingStock === product.productId ? (
+                              <span className="ml-1 text-xs text-zinc-400">저장…</span>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge label={product.status} />
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              className="mr-3 text-blue-600 hover:underline"
+                              onClick={() => {
+                                setEditingId(product.productId);
+                                setMessage("");
+                                setForm({
+                                  productId: String(product.productId),
+                                  productName: product.productName,
+                                  category: product.category,
+                                  brand: product.brand,
+                                  unitCostKrw: String(product.unitCostKrw),
+                                  unitPriceKrw: String(product.unitPriceKrw),
+                                  stockQty: String(product.stockQty),
+                                  status: product.status,
+                                });
+                              }}
+                            >
+                              수정
+                            </button>
+                            <button
+                              type="button"
+                              className="text-red-600 hover:underline"
+                              onClick={() => handleDelete(product.productId)}
+                            >
+                              삭제
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <Pagination page={page} totalPages={totalPages} total={total} onPageChange={setPage} />
           </div>
-        </div>
+        )}
 
         <form
           onSubmit={handleSubmit}
-          className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm"
+          className="h-fit rounded-xl border border-zinc-200 bg-white p-5 shadow-sm xl:sticky xl:top-8"
         >
           <h3 className="mb-4 font-semibold">{editingId ? "상품 수정" : "상품 추가"}</h3>
           <div className="grid gap-3">
@@ -246,7 +299,7 @@ export default function ProductsPage() {
             }).map(([key, label]) => (
               <input
                 key={key}
-                className="rounded-lg border border-zinc-300 px-3 py-2"
+                className={inputClass}
                 placeholder={label}
                 value={form[key as keyof typeof form]}
                 disabled={key === "productId" && !!editingId}
@@ -255,7 +308,7 @@ export default function ProductsPage() {
               />
             ))}
             <select
-              className="rounded-lg border border-zinc-300 px-3 py-2"
+              className={inputClass}
               value={form.status}
               onChange={(e) => setForm({ ...form, status: e.target.value })}
             >
@@ -263,8 +316,21 @@ export default function ProductsPage() {
               <option value="단종">단종</option>
             </select>
           </div>
-          <button className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-white" type="submit">
-            {editingId ? "수정 저장" : "추가"}
+          {message ? (
+            <p
+              className={`mt-3 text-sm ${
+                message.includes("실패") ? "text-red-600" : "text-emerald-600"
+              }`}
+            >
+              {message}
+            </p>
+          ) : null}
+          <button
+            className="mt-4 rounded-lg bg-zinc-900 px-4 py-2 text-sm text-white transition hover:bg-zinc-800 disabled:opacity-50"
+            type="submit"
+            disabled={saving}
+          >
+            {saving ? "저장 중…" : editingId ? "수정 저장" : "추가"}
           </button>
         </form>
       </div>
